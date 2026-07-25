@@ -34,7 +34,7 @@ export default function App() {
 
   const fetchHistory = () => {
     if (!userId) return;
-    authFetch(`${API}/users/${userId}/workouts/`)
+    authFetch(`${API}/users/me/workouts/`)
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data))
