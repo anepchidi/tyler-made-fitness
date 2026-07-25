@@ -32,7 +32,7 @@ export default function Nutrition({ userId }) {
       return;
     }
     const today = new Date().toISOString().split('T')[0];
-    authFetch(`${API}/users/${userId}/nutrition/?start_date=${today}&end_date=${today}`)
+    authFetch(`${API}/users/me/nutrition/?start_date=${today}&end_date=${today}`)
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setEntries(data);
@@ -53,7 +53,7 @@ export default function Nutrition({ userId }) {
   const remove = async (id) => {
     if (!userId) return;
     try {
-      const res = await authFetch(`${API}/users/${userId}/nutrition/${id}`, { method: "DELETE" });
+      const res = await authFetch(`${API}/users/me/nutrition/${id}`, { method: "DELETE" });
       if (res.ok) {
         setEntries(prev => prev.filter(i => i.id !== id));
       } else {
@@ -71,7 +71,18 @@ export default function Nutrition({ userId }) {
       setError("");
 
       const foodData = await getFoodDetails(foodId);
-      await add(foodData, mealType);
+      const serving = foodData?.food?.servings?.serving;
+
+      await add({
+        name: foodData.food.food_name,
+        calories: serving.calories,
+        protein: serving.protein,
+        carbs: serving.carbohydrate,
+        fat: serving.fat,
+        fiber: serving.fiber,
+        sugar: serving.sugar,
+        sodium: serving.sodium
+      }, mealType);
 
       setView("overview");
     } catch (err) {
@@ -90,7 +101,7 @@ export default function Nutrition({ userId }) {
 
     try {
       const today = new Date().toISOString().split('T')[0];
-      const res = await authFetch(`${API}/users/${userId}/nutrition/`, {
+      const res = await authFetch(`${API}/users/me/nutrition/`, {
         method: "POST",
         body: JSON.stringify({
           date: today,
@@ -399,9 +410,9 @@ export default function Nutrition({ userId }) {
             const Icon = mealIcons[mealName];
             const mealTotals = items.reduce((acc, i) => ({
               cal: acc.cal + i.calories,
-              protein: acc.protein + i.protein,
-              carbs: acc.carbs + i.carbs,
-              fat: acc.fat + i.fat
+              protein: acc.protein + i.protein_g,
+              carbs: acc.carbs + i.carbs_g,
+              fat: acc.fat + i.fat_g
             }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
 
             return (

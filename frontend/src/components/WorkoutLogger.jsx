@@ -56,7 +56,7 @@ export default function WorkoutLogger({ userId, exercises, setExercises, onWorko
     if (cart.find(item => item.name === ex.name)) return;
     let lastStats = { weight: 0, reps: 0 };
     try {
-      const res = await authFetch(`${API}/users/${userId}/exercises/${ex.name}/latest`);
+      const res = await authFetch(`${API}/users/me/exercises/${encodeURIComponent(ex.name)}/latest`);
       if (res.ok) lastStats = await res.json();
     } catch {}
     setCart(prev => [...prev, {
@@ -94,7 +94,7 @@ export default function WorkoutLogger({ userId, exercises, setExercises, onWorko
       console.log("Creating workout for userId:", userId);
       
       // Step 1: Create the workout
-      const workoutRes = await authFetch(`${API}/users/${userId}/workouts/`, {
+      const workoutRes = await authFetch(`${API}/users/me/workouts/`, {
         method: "POST",
         body: JSON.stringify({ 
           date: new Date().toISOString().split('T')[0], 

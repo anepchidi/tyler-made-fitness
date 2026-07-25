@@ -27,7 +27,7 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
   useEffect(() => {
     if (!userId) return;
 
-    authFetch(`${API}/users/${userId}/settings`)
+    authFetch(`${API}/users/me/settings`)
       .then(r => r.json())
       .then(data => {
         setUnit(data.weight_unit || "kg");
@@ -46,7 +46,7 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
   const save = async () => {
     try {
       setError("");
-      const res = await authFetch(`${API}/users/${userId}/settings`, {
+      const res = await authFetch(`${API}/users/me/settings`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
