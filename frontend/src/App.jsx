@@ -9,6 +9,7 @@ import Progress from './components/Progress';
 import Templates from './components/Templates';
 import Nutrition from './components/Nutrition';
 import Profile from './components/Profile';
+import SocialFeed from './components/SocialFeed';
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("workoutToken"));
@@ -63,10 +64,20 @@ export default function App() {
   };
 
   const handleLoadTemplate = (template) => {
-    const cartItems = template.exercises.map(name => ({
-      name, muscle_group: "", lastWeight: 0, lastReps: 0,
-      sets: [{ weight: 0, reps: 0, id: Date.now() + Math.random() }]
-    }));
+    const cartItems = (template.exercises || [])
+      .map((exercise) => {
+        const name = typeof exercise === 'string' ? exercise : (exercise.exercise_name || exercise.name || '');
+        if (!name) return null;
+        return {
+          name,
+          muscle_group: exercise.muscle_group || '',
+          lastWeight: 0,
+          lastReps: 0,
+          sets: [{ weight: 0, reps: 0, id: Date.now() + Math.random() }]
+        };
+      })
+      .filter(Boolean);
+
     localStorage.setItem("activeCart", JSON.stringify(cartItems));
     setActivePage('exercise');
   };
@@ -80,7 +91,8 @@ export default function App() {
     progress:  <Progress workoutHistory={workoutHistory} />,
     templates: <Templates onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,
-    profile:   <Profile username={username} userId={userId} workoutHistory={workoutHistory} />,
+    social:    <SocialFeed />,
+    profile:   <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
   };
 
   return (

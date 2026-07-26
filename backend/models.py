@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, Float, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, Float, DateTime, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -14,9 +14,23 @@ class User(Base):
     
     # Link to workouts (One-to-Many)
     workouts = relationship("Workout", back_populates="owner")
+    templates = relationship("WorkoutTemplate", back_populates="owner", cascade="all, delete-orphan")
     settings = relationship("UserSettings", back_populates="owner", uselist=False, cascade="all, delete-orphan")
     nutrition_entries = relationship("NutritionEntry", back_populates="owner", cascade="all, delete-orphan")
     food_items = relationship("FoodItem", back_populates="owner", cascade="all, delete-orphan")
+    following = relationship(
+        "UserFollow",
+        foreign_keys="UserFollow.follower_id",
+        back_populates="follower_user",
+        cascade="all, delete-orphan",
+    )
+    followers = relationship(
+        "UserFollow",
+        foreign_keys="UserFollow.following_id",
+        back_populates="following_user",
+        cascade="all, delete-orphan",
+    )
+    comments = relationship("WorkoutComment", back_populates="author", cascade="all, delete-orphan")
 
 class Workout(Base):
     __tablename__ = "workouts"
@@ -29,6 +43,71 @@ class Workout(Base):
     # Links
     owner = relationship("User", back_populates="workouts")
     exercises = relationship("Exercise", back_populates="workout", cascade="all, delete-orphan")
+    share = relationship("WorkoutShare", back_populates="workout", uselist=False, cascade="all, delete-orphan")
+    comments = relationship("WorkoutComment", back_populates="workout", cascade="all, delete-orphan")
+
+class UserFollow(Base):
+    __tablename__ = "user_follows"
+    __table_args__ = (UniqueConstraint("follower_id", "following_id", name="uq_user_follow"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    following_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    follower_user = relationship("User", foreign_keys=[follower_id], back_populates="following")
+    following_user = relationship("User", foreign_keys=[following_id], back_populates="followers")
+
+
+class WorkoutShare(Base):
+    __tablename__ = "workout_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workout_id = Column(Integer, ForeignKey("workouts.id"), unique=True, nullable=False)
+    visibility = Column(String, default="public")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    workout = relationship("Workout", back_populates="share")
+
+
+class WorkoutComment(Base):
+    __tablename__ = "workout_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workout_id = Column(Integer, ForeignKey("workouts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    workout = relationship("Workout", back_populates="comments")
+    author = relationship("User", back_populates="comments")
+
+
+class WorkoutTemplate(Base):
+    __tablename__ = "workout_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="templates")
+    exercises = relationship("TemplateExercise", back_populates="template", cascade="all, delete-orphan")
+
+
+class TemplateExercise(Base):
+    __tablename__ = "template_exercises"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("workout_templates.id"))
+    exercise_name = Column(String, nullable=False)
+    muscle_group = Column(String, nullable=True)
+    target_sets = Column(Integer, default=3)
+    target_reps = Column(Integer, default=10)
+
+    template = relationship("WorkoutTemplate", back_populates="exercises")
+
 
 class ExerciseLibrary(Base):
     __tablename__ = "exercise_library"

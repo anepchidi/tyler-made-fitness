@@ -25,53 +25,78 @@ def read_root():
 
 
 @router.get("/exercises/library")
-async def get_exercise_library(muscle: Optional[str] = None):
-    api_key = os.getenv("NINJAS_API_KEY")
-
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Ninjas API key missing from configuration.")
-
-    headers = {"X-Api-Key": api_key}
-    url = "https://api.api-ninjas.com/v1/exercises?limit=100"
-
-    if muscle and muscle.strip() and muscle.lower() != "all muscles" and muscle.lower() != "all":
+async def get_exercise_library(muscle: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Returns a merged list of exercises from both local database (seeded and custom) and API-Ninjas.
+    Local database exercises are returned first, followed by API-Ninjas results.
+    If API-Ninjas fails, only local exercises are returned (graceful fallback).
+    """
+    
+    # 1. Fetch exercises from local database
+    db_query = db.query(models.ExerciseLibrary)
+    
+    # Apply muscle filter to database if provided
+    if muscle and muscle.strip() and muscle.lower() not in ("all muscles", "all"):
         sanitized_muscle = muscle.strip().lower()
-        url += f"&muscle={sanitized_muscle}"
-
-    async with httpx.AsyncClient() as client:
+        db_query = db_query.filter(models.ExerciseLibrary.muscle_group.ilike(f"%{sanitized_muscle}%"))
+    
+    db_exercises = db_query.all()
+    
+    # Transform database exercises to standardized format
+    local_exercises = [
+        {
+            "id": f"db-{ex.id}",
+            "name": ex.name,
+            "muscle_group": ex.muscle_group,
+            "image_url": ex.image_url,
+        }
+        for ex in db_exercises
+    ]
+    
+    # 2. Try to fetch from API-Ninjas with graceful fallback
+    api_exercises = []
+    api_key = os.getenv("NINJAS_API_KEY")
+    
+    if not api_key:
+        print("WARNING: Ninjas API key not configured. Returning only local exercises.")
+    else:
         try:
-            res = await client.get(url, headers=headers, timeout=10.0)
-            if res.status_code != 200:
-                print(f"DEBUG ERROR: Status {res.status_code}, Response text: {res.text}")
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"API-Ninjas rejected request (Status {res.status_code}). Check key permissions.",
-                )
-
-            if "application/json" not in res.headers.get("content-type", "").lower():
-                print(f"DEBUG CONTENT TYPE ERROR: Received {res.headers.get('content-type')}, text: {res.text}")
-                raise HTTPException(
-                    status_code=502,
-                    detail="Third-party provider unexpectedly responded with text or HTML data.",
-                )
-
-            external_data = res.json()
-            transformed_exercises = []
-            for idx, ex in enumerate(external_data):
-                raw_muscle = ex.get("muscle", "Other")
-                transformed_exercises.append(
-                    {
-                        "id": idx + 1,
-                        "name": ex.get("name", "Unknown Exercise").title(),
-                        "muscle_group": raw_muscle.replace("_", " ").title(),
-                        "image_url": "https://via.placeholder.com/100?text=Exercise",
-                    }
-                )
-
-            return transformed_exercises
-
-        except httpx.RequestError:
-            raise HTTPException(status_code=503, detail="Connection to exxercise provider failed.")
+            headers = {"X-Api-Key": api_key}
+            url = "https://api.api-ninjas.com/v1/exercises?limit=100"
+            
+            if muscle and muscle.strip() and muscle.lower() not in ("all muscles", "all"):
+                sanitized_muscle = muscle.strip().lower()
+                url += f"&muscle={sanitized_muscle}"
+            
+            async with httpx.AsyncClient() as client:
+                res = await client.get(url, headers=headers, timeout=10.0)
+                
+                if res.status_code == 200:
+                    if "application/json" in res.headers.get("content-type", "").lower():
+                        external_data = res.json()
+                        for idx, ex in enumerate(external_data):
+                            raw_muscle = ex.get("muscle", "Other")
+                            api_exercises.append(
+                                {
+                                    "id": f"api-{idx + 1}",
+                                    "name": ex.get("name", "Unknown Exercise").title(),
+                                    "muscle_group": raw_muscle.replace("_", " ").title(),
+                                    "image_url": "https://via.placeholder.com/100?text=Exercise",
+                                }
+                            )
+                    else:
+                        print(f"WARNING: API-Ninjas returned non-JSON content-type: {res.headers.get('content-type')}")
+                else:
+                    print(f"WARNING: API-Ninjas returned status {res.status_code}: {res.text}")
+        
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            print(f"WARNING: Failed to fetch from API-Ninjas: {str(e)}")
+        except Exception as e:
+            print(f"WARNING: Unexpected error fetching from API-Ninjas: {str(e)}")
+    
+    # 3. Merge results: local exercises first, then API exercises
+    combined_exercises = local_exercises + api_exercises
+    return combined_exercises
 
 
 @router.post("/exercises/library")
