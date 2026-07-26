@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Award, Scale, Ruler, Calendar, Target, TrendingUp, Flame, Zap } from 'lucide-react';
+import { User, Award, Scale, Ruler, Calendar, Target, TrendingUp, Flame, Zap, Users } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -13,7 +13,7 @@ const authFetch = (url, options = {}) => {
   return fetch(url, { ...options, headers });
 };
 
-export default function Profile({ username, userId, workoutHistory = [] }) {
+export default function Profile({ username, userId, workoutHistory = [], showSocialActions = false, viewUserId = null }) {
   const [unit, setUnit] = useState("kg");
   const [bodyweight, setBodyweight] = useState("");
   const [height, setHeight] = useState("");
@@ -22,25 +22,42 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [socialCounts, setSocialCounts] = useState({ follower_count: 0, following_count: 0, workout_count: 0 });
+  const [socialBusy, setSocialBusy] = useState(false);
+  const [socialMessage, setSocialMessage] = useState("");
+  const [isFollowing, setIsFollowing] = useState(false);
 
   // Fetch settings from API on component mount
   useEffect(() => {
     if (!userId) return;
 
-    authFetch(`${API}/users/me/settings`)
-      .then(r => r.json())
-      .then(data => {
-        setUnit(data.weight_unit || "kg");
-        setHeight(data.height_cm ? String(data.height_cm) : "");
-        setBodyweight(data.bodyweight_kg ? String(data.bodyweight_kg) : "");
-        setAge(data.age ? String(data.age) : "");
-        setGoal(data.fitness_goal || "muscle");
-        setLoading(false);
-      })
-      .catch(err => {
+    const loadProfileData = async () => {
+      try {
+        const settingsResponse = await authFetch(`${API}/users/me/settings`);
+        const settingsData = await settingsResponse.json();
+        setUnit(settingsData.weight_unit || "kg");
+        setHeight(settingsData.height_cm ? String(settingsData.height_cm) : "");
+        setBodyweight(settingsData.bodyweight_kg ? String(settingsData.bodyweight_kg) : "");
+        setAge(settingsData.age ? String(settingsData.age) : "");
+        setGoal(settingsData.fitness_goal || "muscle");
+
+        const profileResponse = await authFetch(`${API}/users/${userId}/profile/public`);
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json();
+          setSocialCounts({
+            follower_count: profileData.follower_count || 0,
+            following_count: profileData.following_count || 0,
+            workout_count: profileData.workout_count || 0,
+          });
+        }
+      } catch (err) {
         console.error("Failed to load settings:", err);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadProfileData();
   }, [userId]);
 
   const save = async () => {
@@ -73,7 +90,7 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
   };
 
   // Calculate stats from workout history
-  const totalWorkouts = workoutHistory.length;
+  const totalWorkouts = socialCounts.workout_count || workoutHistory.length;
   const thisMonth = workoutHistory.filter(w => {
     const workoutDate = new Date(w.date);
     const now = new Date();
@@ -84,6 +101,32 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
   const today = new Date().toISOString().split('T')[0];
   const hasWorkoutToday = workoutHistory.some(w => w.date === today);
   const currentStreak = hasWorkoutToday ? 1 : 0; // Simplified - you can enhance this
+
+  const handleSocialToggle = async () => {
+    if (!userId) return;
+    const targetId = viewUserId ?? userId;
+    if (targetId === userId) {
+      setSocialMessage("You can’t follow yourself here.");
+      return;
+    }
+
+    setSocialBusy(true);
+    setSocialMessage("");
+    try {
+      const url = `${API}/users/${userId}/follow/${targetId}`;
+      const method = isFollowing ? 'DELETE' : 'POST';
+      const response = await authFetch(url, { method });
+      if (!response.ok) {
+        throw new Error('Unable to update follow state');
+      }
+      setIsFollowing((prev) => !prev);
+      setSocialMessage(isFollowing ? 'Unfollowed successfully' : 'Following now');
+    } catch (err) {
+      setSocialMessage(err.message || 'Unable to update follow state');
+    } finally {
+      setSocialBusy(false);
+    }
+  };
 
   const achievements = [
     { icon: <Zap size={24} color="#10b981" />, label: "First Workout", unlocked: totalWorkouts >= 1, bg: "#ecfdf5" },
@@ -142,10 +185,30 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
                 Member since {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </p>
             </div>
+            {showSocialActions ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                <button
+                  onClick={handleSocialToggle}
+                  disabled={socialBusy}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '999px',
+                    border: '1px solid #10b981',
+                    background: '#ecfdf5',
+                    color: '#059669',
+                    cursor: socialBusy ? 'wait' : 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  {socialBusy ? 'Working...' : (isFollowing ? 'Unfollow' : 'Follow')}
+                </button>
+                {socialMessage ? <span style={{ fontSize: '12px', color: '#666' }}>{socialMessage}</span> : null}
+              </div>
+            ) : null}
           </div>
 
           {/* Quick Stats Grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
             <div style={{ 
               padding: "16px", 
               background: "#f5f5f5", 
@@ -167,10 +230,10 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
               textAlign: "center" 
             }}>
               <div style={{ fontSize: "28px", fontWeight: 700, color: "#10b981", marginBottom: "4px" }}>
-                {thisMonth}
+                {socialCounts.follower_count}
               </div>
               <div style={{ fontSize: "12px", color: "#059669", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                This Month
+                Followers
               </div>
             </div>
 
@@ -181,10 +244,24 @@ export default function Profile({ username, userId, workoutHistory = [] }) {
               textAlign: "center" 
             }}>
               <div style={{ fontSize: "28px", fontWeight: 700, color: "#f59e0b", marginBottom: "4px" }}>
-                {currentStreak}
+                {socialCounts.following_count}
               </div>
               <div style={{ fontSize: "12px", color: "#d97706", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Day Streak
+                Following
+              </div>
+            </div>
+
+            <div style={{ 
+              padding: "16px", 
+              background: "#dbeafe", 
+              borderRadius: "12px",
+              textAlign: "center" 
+            }}>
+              <div style={{ fontSize: "28px", fontWeight: 700, color: "#3b82f6", marginBottom: "4px" }}>
+                {thisMonth}
+              </div>
+              <div style={{ fontSize: "12px", color: "#2563eb", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                This Month
               </div>
             </div>
           </div>

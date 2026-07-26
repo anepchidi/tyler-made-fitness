@@ -1,4 +1,4 @@
-import { LayoutDashboard, Dumbbell, TrendingUp, History, User, KanbanSquare, Apple, LogOut } from 'lucide-react';
+import { LayoutDashboard, Dumbbell, TrendingUp, History, User, KanbanSquare, Apple, LogOut, Users } from 'lucide-react';
 
 export default function Sidebar({ activePage, setActivePage, username, onLogout }) {
   const menuItems = [
@@ -6,6 +6,7 @@ export default function Sidebar({ activePage, setActivePage, username, onLogout 
     { id: 'templates', icon: KanbanSquare, label: 'Routines' },
     { id: 'nutrition', icon: Apple, label: 'Nutrition' },
     { id: 'exercise', icon: Dumbbell, label: 'Exercise' },
+    { id: 'social', icon: Users, label: 'Social' },
     { id: 'progress', icon: TrendingUp, label: 'Progress' },
     { id: 'history', icon: History, label: 'History' },
     { id: 'profile', icon: User, label: 'Profile' },
