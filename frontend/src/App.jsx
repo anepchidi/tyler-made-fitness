@@ -5,114 +5,138 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import WorkoutLogger from './components/WorkoutLogger';
 import History from './components/History';
-import Progress from './components/Progress';
+import ExerciseAnalytics from './components/ExerciseAnalytics';
 import Templates from './components/Templates';
 import Nutrition from './components/Nutrition';
 import Profile from './components/Profile';
 import SocialFeed from './components/SocialFeed';
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem("workoutToken"));
+  const [token, setToken] = useState(localStorage.getItem('workoutToken'));
   const [userId, setUserId] = useState(() => {
-    const id = localStorage.getItem("userId");
-    return id ? parseInt(id) : null;
+    const id = localStorage.getItem('userId');
+    return id ? parseInt(id, 10) : null;
   });
-  const [username, setUsername] = useState(localStorage.getItem("username") || "");
+  const [username, setUsername] = useState(localStorage.getItem('username') || '');
   const [activePage, setActivePage] = useState('dashboard');
   const [exercises, setExercises] = useState([]);
+  const [isLoadingExercises, setIsLoadingExercises] = useState(true);
   const [workoutHistory, setWorkoutHistory] = useState([]);
 
   useEffect(() => {
-    fetch(`${API}/exercises/library`)
-      .then(r => r.json())
-      .then(data => Array.isArray(data) && setExercises(data))
-      .catch(() => {});
+    const loadExercises = async () => {
+      setIsLoadingExercises(true);
+      try {
+        const res = await fetch(`${API}/exercises/library`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setExercises(data);
+        }
+      } catch (err) {
+        console.error('Failed to load exercise library', err);
+      } finally {
+        setIsLoadingExercises(false);
+      }
+    };
+
+    loadExercises();
   }, []);
 
   useEffect(() => {
-    if (userId) fetchHistory();
+    if (userId) {
+      fetchHistory();
+    }
   }, [userId]);
 
-  const fetchHistory = () => {
+  const fetchHistory = async () => {
     if (!userId) return;
-    authFetch(`${API}/users/me/workouts/`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data))
-          setWorkoutHistory(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
-      })
-      .catch(() => {});
+    try {
+      const res = await authFetch(`${API}/users/me/workouts/`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setWorkoutHistory(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
+      }
+    } catch (err) {
+      console.error('Unable to fetch workout history', err);
+    }
   };
 
   const handleLogin = (access_token, user_id, uname) => {
-    localStorage.setItem("workoutToken", access_token);
-    localStorage.setItem("userId", user_id);
-    if (uname) localStorage.setItem("username", uname);
+    localStorage.setItem('workoutToken', access_token);
+    localStorage.setItem('userId', user_id);
+    if (uname) {
+      localStorage.setItem('username', uname);
+    }
     setToken(access_token);
-    setUserId(parseInt(user_id));
-    setUsername(uname || "");
+    setUserId(parseInt(user_id, 10));
+    setUsername(uname || '');
     setActivePage('dashboard');
   };
 
   const handleLogout = () => {
     localStorage.clear();
-    setToken(null); 
-    setUserId(null); 
-    setUsername("");
-    setWorkoutHistory([]); 
+    setToken(null);
+    setUserId(null);
+    setUsername('');
+    setWorkoutHistory([]);
     setActivePage('dashboard');
   };
 
   const handleLoadTemplate = (template) => {
     const cartItems = (template.exercises || [])
-      .map((exercise) => {
-        const name = typeof exercise === 'string' ? exercise : (exercise.exercise_name || exercise.name || '');
+      .map((exercise, index) => {
+        const name = typeof exercise === 'string'
+          ? exercise
+          : exercise.exercise_name || exercise.name || '';
+
         if (!name) return null;
+
         return {
           name,
           muscle_group: exercise.muscle_group || '',
           lastWeight: 0,
-          lastReps: 0,
-          sets: [{ weight: 0, reps: 0, id: Date.now() + Math.random() }]
+          lastReps: exercise.target_reps || 0,
+          sets: [{ weight: 0, reps: exercise.target_reps || 0, id: Date.now() + index }],
         };
       })
       .filter(Boolean);
 
-    localStorage.setItem("activeCart", JSON.stringify(cartItems));
-    setActivePage('exercise');
+    localStorage.setItem('activeCart', JSON.stringify(cartItems));
+    setActivePage('workout');
   };
 
   if (!token) return <AuthPage onLogin={handleLogin} />;
 
   const pages = {
     dashboard: <Dashboard workoutHistory={workoutHistory} username={username} />,
-    exercise:  <WorkoutLogger userId={userId} exercises={exercises} setExercises={setExercises} onWorkoutSaved={() => { fetchHistory(); setActivePage('history'); }} />,
-    history:   <History workoutHistory={workoutHistory} onDelete={fetchHistory} />,
-    progress:  <Progress workoutHistory={workoutHistory} />,
-    templates: <Templates onLoadTemplate={handleLoadTemplate} />,
+    exercise: (
+      <ExerciseAnalytics
+        exercises={exercises}
+        setExercises={setExercises}
+        isLoadingExercises={isLoadingExercises}
+      />
+    ),
+    workout: <WorkoutLogger userId={userId} onWorkoutSaved={() => { fetchHistory(); setActivePage('history'); }} />,
+    history: <History workoutHistory={workoutHistory} onDelete={fetchHistory} />,
+    templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,
-    social:    <SocialFeed />,
-    profile:   <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
+    social: <SocialFeed />,
+    profile: <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
   };
 
   return (
-    <div style={{ 
-      display:"flex", 
-      height:"100vh", 
-      width:"100vw", 
-      fontFamily:"'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif", 
-      background:"#fafafa", 
-      overflow:"hidden" 
-    }}>
-      <Sidebar 
-        activePage={activePage} 
-        setActivePage={setActivePage} 
-        username={username}
-        onLogout={handleLogout} 
-      />
-      <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
-        {pages[activePage]}
-      </div>
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        width: '100vw',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+        background: '#fafafa',
+        overflow: 'hidden',
+      }}
+    >
+      <Sidebar activePage={activePage} setActivePage={setActivePage} username={username} onLogout={handleLogout} />
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>{pages[activePage]}</div>
     </div>
   );
 }

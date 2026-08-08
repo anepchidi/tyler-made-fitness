@@ -1,20 +1,18 @@
-import { LayoutDashboard, Dumbbell, TrendingUp, History, User, KanbanSquare, Apple, LogOut, Users } from 'lucide-react';
+import { LayoutDashboard, Dumbbell, History, User, KanbanSquare, Apple, LogOut, Users } from 'lucide-react';
 
 export default function Sidebar({ activePage, setActivePage, username, onLogout }) {
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'templates', icon: KanbanSquare, label: 'Routines' },
-    { id: 'nutrition', icon: Apple, label: 'Nutrition' },
     { id: 'exercise', icon: Dumbbell, label: 'Exercise' },
+    { id: 'nutrition', icon: Apple, label: 'Nutrition' },
     { id: 'social', icon: Users, label: 'Social' },
-    { id: 'progress', icon: TrendingUp, label: 'Progress' },
     { id: 'history', icon: History, label: 'History' },
     { id: 'profile', icon: User, label: 'Profile' },
   ];
 
   return (
     <div style={styles.sidebar}>
-      {/* Logo Section */}
       <div style={styles.logoSection}>
         <div style={styles.logoIcon}>
           <Dumbbell size={24} color="#10b981" strokeWidth={2.5} />
@@ -22,18 +20,14 @@ export default function Sidebar({ activePage, setActivePage, username, onLogout 
         <h2 style={styles.logoText}>TylerMade Fitness.</h2>
       </div>
 
-      {/* User Section */}
       <div style={styles.userSection}>
-        <div style={styles.avatar}>
-          {username?.[0]?.toUpperCase() || 'U'}
-        </div>
+        <div style={styles.avatar}>{username?.[0]?.toUpperCase() || 'U'}</div>
         <div style={styles.userInfo}>
           <div style={styles.userName}>{username || 'User'}</div>
-          <div style={styles.userStatus}>Active Member</div>
+          
         </div>
       </div>
 
-      {/* Navigation */}
       <nav style={styles.nav}>
         {menuItems.map(({ id, icon: Icon, label }) => (
           <button
@@ -43,14 +37,14 @@ export default function Sidebar({ activePage, setActivePage, username, onLogout 
               ...styles.navItem,
               ...(activePage === id ? styles.navItemActive : {}),
             }}
-            onMouseEnter={e => {
+            onMouseEnter={(e) => {
               if (activePage !== id) {
-                e.currentTarget.style.background = '#e8f5e9'; // ← EMERALD GREEN tint
+                e.currentTarget.style.background = '#e8f5e9';
                 e.currentTarget.style.color = '#059669';
                 e.currentTarget.style.transform = 'translateX(4px)';
               }
             }}
-            onMouseLeave={e => {
+            onMouseLeave={(e) => {
               if (activePage !== id) {
                 e.currentTarget.style.background = 'transparent';
                 e.currentTarget.style.color = '#666';
@@ -64,16 +58,15 @@ export default function Sidebar({ activePage, setActivePage, username, onLogout 
         ))}
       </nav>
 
-      {/* Logout Button */}
       <button
         onClick={onLogout}
         style={styles.logoutButton}
-        onMouseEnter={e => {
+        onMouseEnter={(e) => {
           e.currentTarget.style.background = '#fee2e2';
           e.currentTarget.style.color = '#ef4444';
           e.currentTarget.style.transform = 'translateX(4px)';
         }}
-        onMouseLeave={e => {
+        onMouseLeave={(e) => {
           e.currentTarget.style.background = '#f5f5f5';
           e.currentTarget.style.color = '#666';
           e.currentTarget.style.transform = 'translateX(0)';
@@ -124,21 +117,18 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    padding: '12px',
-    background: 'white',
-    borderRadius: '12px',
-    border: '1px solid #e5e5e5',
+    padding: '4px 14px', // Reduced padding & removed white background/border
   },
   avatar: {
-    width: '44px',
-    height: '44px',
-    borderRadius: '12px',
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
     color: 'white',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: '700',
   },
   userInfo: {
@@ -146,10 +136,10 @@ const styles = {
     minWidth: 0,
   },
   userName: {
-    fontSize: '15px',
+    fontSize: '14px',
     fontWeight: '600',
     color: '#111',
-    marginBottom: '2px',
+    marginBottom: '1px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',

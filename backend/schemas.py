@@ -1,15 +1,33 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date, datetime
 
+# --- ENUMS ---
+class MealType(str, Enum):
+    BREAKFAST = "breakfast"
+    LUNCH = "lunch"
+    DINNER = "dinner"
+    SNACK = "snack"
+ 
+class WeightUnit(str, Enum):
+    KG = "kg"
+    LBS = "lbs"
+ 
+class Visibility(str, Enum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+
 # --- EXERCISE LIBRARY SCHEMAS ---
 class ExerciseLibraryBase(BaseModel):
-    name: str
-    muscle_group: str
-    image_url: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    muscle_group: str = Field(..., min_length=1, max_length=50)
+    image_url: Optional[str] = Field(default=None, max_length=500)
 
 class ExerciseLibraryCreate(ExerciseLibraryBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class ExerciseLibrary(ExerciseLibraryBase):
     id: int
@@ -19,12 +37,15 @@ class ExerciseLibrary(ExerciseLibraryBase):
 
 # --- SET SCHEMAS ---
 class SetBase(BaseModel):
-    reps: int
-    weight: float
+    reps: int = Field(..., gt=0, le=1000)
+    weight: float = Field(..., ge=0, le=2000)
 
 class SetCreate(SetBase):
-    set_number: int = 1
+    set_number: int = Field(default=1, gt=0, le=100)
 
+    class Config:
+        extra = "forbid"
+        
 class Set(SetBase):
     id: int
     exercise_id: int
@@ -35,13 +56,16 @@ class Set(SetBase):
 
 # --- EXERCISE SCHEMAS ---
 class ExerciseBase(BaseModel):
-    name: str
-    muscle_group: Optional[str] = None
-    notes: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    muscle_group: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 class ExerciseCreate(ExerciseBase):
     """Create an exercise with its sets"""
-    sets: List[SetCreate]
+    sets: List[SetCreate] = Field(default_factory=list)
+
+    class Config:
+        extra = "forbid"
 
 class Exercise(ExerciseBase):
     id: int
@@ -53,7 +77,10 @@ class Exercise(ExerciseBase):
 
 # --- SOCIAL SCHEMAS ---
 class UserFollowCreate(BaseModel):
-    target_user_id: int
+    target_user_id: int = Field(..., gt=0)
+
+    class Config:
+        extra = "forbid"
 
 class UserFollowResponse(BaseModel):
     id: int
@@ -67,7 +94,10 @@ class UserFollowResponse(BaseModel):
         from_attributes = True
 
 class WorkoutShareCreate(BaseModel):
-    visibility: str = "public"
+    visibility: Visibility = Visibility.PUBLIC
+ 
+    class Config:
+        extra = "forbid"
 
 class WorkoutShareResponse(BaseModel):
     id: int
@@ -79,7 +109,10 @@ class WorkoutShareResponse(BaseModel):
         from_attributes = True
 
 class WorkoutCommentCreate(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=1000)
+
+    class Config:
+        extra = "forbid"
 
 class WorkoutCommentResponse(BaseModel):
     id: int
@@ -123,13 +156,14 @@ class PublicWorkoutFeedItem(BaseModel):
 
 # --- TEMPLATE SCHEMAS ---
 class TemplateExerciseBase(BaseModel):
-    exercise_name: str
-    muscle_group: Optional[str] = None
-    target_sets: int = 3
-    target_reps: int = 10
+    exercise_name: str = Field(..., min_length=1, max_length=100)
+    muscle_group: Optional[str] = Field(default=None, max_length=50)
+    target_sets: int = Field(default=3, gt=0, le=50)
+    target_reps: int = Field(default=10, gt=0, le=1000)
 
 class TemplateExerciseCreate(TemplateExerciseBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class TemplateExercise(TemplateExerciseBase):
     id: int
@@ -139,11 +173,14 @@ class TemplateExercise(TemplateExerciseBase):
         from_attributes = True
 
 class WorkoutTemplateBase(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=1000)
 
 class WorkoutTemplateCreate(WorkoutTemplateBase):
     exercises: List[TemplateExerciseCreate] = Field(default_factory=list)
+
+    class Config:
+        extra = "forbid"
 
 class WorkoutTemplate(WorkoutTemplateBase):
     id: int
@@ -179,10 +216,11 @@ class StatsResponse(BaseModel):
 # --- WORKOUT SCHEMAS ---
 class WorkoutBase(BaseModel):
     date: date
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 class WorkoutCreate(WorkoutBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class Workout(WorkoutBase):
     id: int
@@ -194,11 +232,24 @@ class Workout(WorkoutBase):
 
 # --- USER SCHEMAS ---
 class UserBase(BaseModel):
-    email: str
-    username: str
+    email: str = Field(
+        ...,
+        min_length=5,
+        max_length=254,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    )
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=30,
+        pattern=r"^[a-zA-Z0-9_]+$",
+    )
 
 class UserCreate(UserBase):
-    password: str  # We need a password to create a user
+    password: str = Field(..., min_length=8, max_length=128)
+
+    class Config:
+        extra = "forbid"
 
 class User(UserBase):
     id: int
@@ -210,14 +261,15 @@ class User(UserBase):
 
 # --- USER SETTINGS SCHEMAS ---
 class UserSettingsBase(BaseModel):
-    weight_unit: str = "kg"
-    height_cm: Optional[float] = None
-    bodyweight_kg: Optional[float] = None
-    age: Optional[int] = None
-    fitness_goal: Optional[str] = None
+    weight_unit: WeightUnit = WeightUnit.KG
+    height_cm: Optional[float] = Field(default=None, gt=0, le=300)
+    bodyweight_kg: Optional[float] = Field(default=None, gt=0, le=500)
+    age: Optional[int] = Field(default=None, gt=0, le=120)
+    fitness_goal: Optional[str] = Field(default=None, max_length=50)
 
 class UserSettingsCreate(UserSettingsBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class UserSettings(UserSettingsBase):
     id: int
@@ -231,21 +283,22 @@ class UserSettings(UserSettingsBase):
 # --- NUTRITION ENTRY SCHEMAS ---
 class NutritionEntryBase(BaseModel):
     date: date
-    meal_type: str  # 'breakfast', 'lunch', 'dinner', 'snack'
-    meal_name: str
-    calories: int
-    protein_g: float
-    carbs_g: float
-    fat_g: float
-    fiber_g: float
-    sugar_g: float
-    sodium_mg: float
-    potassium_mg: Optional[float] = 0.0
-    iron_pct: Optional[float] = 0.0
-    calcium_pct: Optional[float] = 0.0
+    meal_type: MealType
+    meal_name: str = Field(..., min_length=1, max_length=200)
+    calories: int = Field(..., ge=0, le=10000)
+    protein_g: float = Field(..., ge=0, le=1000)
+    carbs_g: float = Field(..., ge=0, le=1000)
+    fat_g: float = Field(..., ge=0, le=1000)
+    fiber_g: float = Field(..., ge=0, le=500)
+    sugar_g: float = Field(..., ge=0, le=1000)
+    sodium_mg: float = Field(..., ge=0, le=20000)
+    potassium_mg: Optional[float] = Field(default=0.0, ge=0, le=20000)
+    iron_pct: Optional[float] = Field(default=0.0, ge=0, le=1000)
+    calcium_pct: Optional[float] = Field(default=0.0, ge=0, le=1000)
 
 class NutritionEntryCreate(NutritionEntryBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class NutritionEntry(NutritionEntryBase):
     id: int
@@ -257,21 +310,22 @@ class NutritionEntry(NutritionEntryBase):
 
 # --- FOOD ITEM SCHEMAS ---
 class FoodItemBase(BaseModel):
-    name: str
-    serving_size: str
-    calories: int
-    protein_g: float
-    carbs_g: float
-    fat_g: float
-    fiber_g: float
-    sugar_g: float
-    sodium_mg: float
-    potassium_mg: float
-    iron_pct: float
-    calcium_pct: float
+    name: str = Field(..., min_length=1, max_length=200)
+    serving_size: str = Field(..., min_length=1, max_length=100)
+    calories: int = Field(..., ge=0, le=10000)
+    protein_g: float = Field(..., ge=0, le=1000)
+    carbs_g: float = Field(..., ge=0, le=1000)
+    fat_g: float = Field(..., ge=0, le=1000)
+    fiber_g: float = Field(..., ge=0, le=500)
+    sugar_g: float = Field(..., ge=0, le=1000)
+    sodium_mg: float = Field(..., ge=0, le=20000)
+    potassium_mg: float = Field(..., ge=0, le=20000)
+    iron_pct: float = Field(..., ge=0, le=1000)
+    calcium_pct: float = Field(..., ge=0, le=1000)
 
 class FoodItemCreate(FoodItemBase):
-    pass
+    class Config:
+        extra = "forbid"
 
 class FoodItem(FoodItemBase):
     id: int

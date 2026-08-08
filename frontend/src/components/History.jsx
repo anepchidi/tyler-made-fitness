@@ -38,6 +38,28 @@ export default function History({ workoutHistory, onDelete }) {
     transition: "all 0.2s"
   };
 
+  const calculateWorkoutVolume = (exercises = []) => {
+    return exercises.reduce((sum, e) => {
+     if (e.sets && e.sets.length > 0) {
+       return sum + e.sets.reduce((s, set) => {
+         const weight = Number(set.weight) || 0; // Fallback to 0 if empty
+         const reps = Number(set.reps) || 0;
+         return s + (weight * reps);
+       }, 0);
+      }
+
+    // 2. Fallback for older data structure where weight/reps were direct properties
+      const weight = Number(e.weight) || 0;
+      const reps = Number(e.reps) || 0;
+      return sum + (weight * reps);
+    }, 0);
+  };
+
+  const totalVolumeKg = workoutHistory.reduce(
+  (sum, w) => sum + calculateWorkoutVolume(w.exercises), 
+  0
+  );
+
   return (
     <div style={{ flex:1, padding:"32px", overflowY:"auto", background: "#fafafa" }}>
       <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
@@ -68,9 +90,7 @@ export default function History({ workoutHistory, onDelete }) {
             },
             { 
               label: "Total Volume", 
-              value: `${(workoutHistory.reduce((sum, w) => 
-                sum + (w.exercises || []).reduce((s, e) => s + e.weight * e.reps, 0), 0
-              ) / 1000).toFixed(1)}t`, 
+              value: `${(totalVolumeKg / 1000).toFixed(1)}t`, 
               icon: TrendingUp, 
               color: "#059669",
               bg: "#f3f4f6"
