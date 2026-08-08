@@ -34,78 +34,120 @@
 
 ---
 
-## Phase 2: NUTRITION & USER SETTINGS ⏳ PLANNED
+## Phase 2: NUTRITION & USER SETTINGS 🟡 PARTIALLY IMPLEMENTED
 
-### What Will Be Built
-- User settings persistent storage (height, weight, age, fitness goal)
-- Nutrition entry logging (meals with macros)
-- Food item library (custom foods for quick logging)
-- Nutrition dashboard with macro breakdown
-- API endpoints for all CRUD operations
+### Current Status
+- [x] User settings models and endpoints exist
+- [x] Nutrition entry and food item CRUD endpoints exist
+- [x] Frontend profile and nutrition views have API-backed UI scaffolding
+- [ ] Final validation, persistence polish, and chart/reporting improvements remain
 
-### Models to Add
+### Core Models
 - `UserSettings` - User preferences, linked 1:1 to User
 - `NutritionEntry` - Daily meal logs with calories/macros
 - `FoodItem` - Custom food definitions for quick entry
 
-### API Endpoints to Add
-- GET/PUT `/users/{id}/settings`
-- POST/GET/DELETE `/users/{id}/nutrition/`
-- GET/POST/DELETE `/users/{id}/foods`
+### Core Endpoints
+- GET/PUT `/users/me/settings`
+- POST/GET/DELETE `/users/me/nutrition/`
+- GET/POST/DELETE `/users/me/foods`
 
-### Frontend Components to Update
-- **Profile.jsx** - Fetch/save settings from API instead of localStorage
-- **Nutrition.jsx** - Complete implementation with charts and forms
-
-### Documentation
-- PHASE_2_PLAN.md - Detailed implementation guide with code snippets
-- Step-by-step instructions with all code ready to implement
-
-### Time Estimate
-~3 hours total (30 min models, 45 min API, 90 min frontend, 30 min testing)
+### Frontend Components
+- **Profile.jsx** - Fetches and saves settings from the API
+- **Nutrition.jsx** - Calls nutrition endpoints and renders user data
 
 ---
 
-## Phase 3: TEMPLATES & PROGRESS ⏳ PLANNED
+## Phase 3: TEMPLATES & PROGRESS 🟡 PARTIALLY IMPLEMENTED
 
-### What Will Be Built
-- Workout template creation (save structure for reuse)
-- Template management (view, edit, delete)
-- Progress tracking endpoints
-- Strength stats (personal records, weight progression)
-- Volume tracking (total weight moved over time)
+### Current Status
+- [x] Template models and CRUD APIs exist
+- [x] Strength and stats endpoints are present
+- [x] Frontend routine builder and template management UI exist
+- [ ] Template loading into the workout logger and charts remain less polished than the initial experience
 
 ### Backend Work
 - `WorkoutTemplate` and `TemplateExercise` models
 - GET/POST/DELETE template endpoints
 - GET progress stats endpoints (strength, volume, streak)
-- Enhanced `/users/{id}/exercises/{name}/latest` endpoint
+- Enhanced `/users/me/exercises/{name}/latest` endpoint
 
 ### Frontend Work
-- **Templates.jsx** - Fetch templates from API, load into workout
-- **Progress.jsx** - Connect charts to real data from API
-
-### Expected Duration
-~4 hours
+- **Templates.jsx** - Fetches templates from the API and supports routine creation
+- **ExerciseAnalytics.jsx** - Uses the stats endpoints for progress visuals
 
 ---
 
-## Phase 4: SOCIAL FEATURES ⏳ PLANNED
+## Audit Findings: Phase 2, Phase 3, Phase 4
 
-### What Will Be Built
-- User following system
-- Workout sharing (public/friends/private)
-- Comments on workouts
-- Public workout feed
-- User profiles
+### Phase 2 Deficits
+- Backend validation is weak: `UserSettingsCreate`, `NutritionEntryCreate`, and `FoodItemCreate` allow free-form strings and negative values, with no enum or numeric bounds enforcement.
+- Nutrition schema/database mismatch: `NutritionEntry` schema includes `potassium_mg`, `iron_pct`, and `calcium_pct`, but `backend/models.py` does not store them and `create_nutrition_entry` ignores these fields.
+- `FoodItem` schema includes micronutrient fields, but `backend/models.py` only persists `name`, `serving_size`, `calories`, `protein_g`, `carbs_g`, and `fat_g`.
+- `backend/routers/nutrition.py` has a broken `get_food_details` implementation: it references an undefined `servings` variable and can raise internal server errors when FatSecret returns unexpected data.
+- `UserSettings` values are loaded in `Profile.jsx`, but user settings are not currently referenced in workout or progress calculations anywhere in the codebase.
+- Frontend request handling is inconsistent: `Profile.jsx` duplicates `authFetch`, `App.jsx` uses direct `fetch` for exercise library loading, and custom auth helpers are scattered instead of a single shared client.
+- `Nutrition.jsx` only fetches today’s entries on mount and does not provide robust error fallback or input validation before posting entries.
 
-### Models
-- `UserFollow` - Follow relationships
-- `WorkoutShare` - Sharing visibility settings
-- `WorkoutComment` - Comments on workouts
+### Phase 3 Deficits
+- Templates are implemented, but input validation is lax: `TemplateExerciseCreate` accepts `target_sets` and `target_reps` without minimum/maximum guards.
+- Progress implementation is incomplete: a volume progress endpoint is documented but not implemented; only `/users/me/progress/strength` exists.
+- The `/users/me/exercises/{exercise_name}/latest` route exists but is unused on the frontend.
+- Template loading into `WorkoutLogger` is available, but the data mapping is brittle: it depends on `target_reps` and can generate 0-rep sets if template data is incomplete.
+- `ExerciseAnalytics.jsx` handles empty chart data, but error UI and empty-state messaging are limited and could confuse users.
 
-### Time Estimate
-~6 hours
+### Phase 4 Deficits
+- Social features are partially implemented, but key UX gaps remain: follow-state initialization is missing in `Profile.jsx`, there is no share-toggle control in workout creation, and public feed pagination/discovery flows are not built out.
+- API standardization issues persist: components like `Profile.jsx`, `SocialFeed.jsx`, and `App.jsx` bypass the shared `frontend/src/api/client.js` pattern or duplicate authentication logic.
+- Authorization is present on most user-scoped routes, but some models and schemas are still permissive (for example, `WorkoutShareCreate.visibility` is not restricted to allowed values).
+
+### Security & Vulnerability Matrix
+- JWT fallback secret in `backend/dependencies.py` (`fallback-dev-key`) is unsafe for production use.
+- Pydantic schemas are permissive and lack `extra = 'forbid'`, string length constraints, numeric bounds, and enum enforcement for critical fields like `meal_type`, `weight_unit`, and `visibility`.
+- Schema mismatch between frontend/backend nutrition and food item fields can cause silent data loss or runtime failures.
+- External API handling for FatSecret is brittle; the broken `get_food_details` path can surface internal errors.
+- Multiple duplicated auth helpers increase the risk of missing authorization headers in requests.
+- CORS configuration is environment-driven but should be hardened with explicit allowed origins and stricter rules before production rollout.
+- There is no rate limiting, request throttling, or CSRF protection currently documented or implemented.
+
+### Action Plan Prioritized Checklist
+1. Harden backend data validation and schema alignment for Phase 2 nutrition/settings, including enum constraints and negative-value guards.
+2. Fix the FatSecret food detail flow and add robust external API response validation and error handling.
+3. Consolidate frontend API calls to the central client and remove duplicated `authFetch` implementations.
+4. Clarify Phase 3 scope by adding the missing volume progress endpoint or updating the documentation to reflect current strength-only progress support.
+5. Improve social/user UX by initializing follow state, adding share controls, and handling empty/ loading states across `Profile.jsx`, `SocialFeed.jsx`, and `Templates.jsx`.
+6. Remove the JWT secret fallback, enforce required env vars, and add production-safe auth config checks.
+7. Add regression tests for nutrition entry validation, template loading, progress endpoints, and social ownership/security checks.
+
+---
+
+## Phase 4: SOCIAL FEATURES 🟡 PARTIALLY IMPLEMENTED
+
+### Current Status
+- [x] Social models and migration added: `UserFollow`, `WorkoutShare`, and `WorkoutComment`
+- [x] Backend endpoints implemented for follow/unfollow, workout visibility updates, public feed, comments, and public profile data
+- [x] Frontend social UI scaffold added in `SocialFeed` and `Profile`
+- [ ] Follow/discover experience, share controls, and feed pagination remain incomplete
+- [ ] Comment moderation, loading/error states, and refresh behavior still need hardening
+- [ ] Security review and API contract cleanup are still required before Phase 5
+
+### What Is Implemented
+- Social relationships are stored in the database via new join and visibility tables
+- Public feed and workout comments are exposed through backend endpoints
+- The frontend includes a social feed experience and profile follow actions
+
+### Identified Deficits
+- UI/UX: missing empty states for the discover tab, limited feedback for follow/comment actions, and no visible share-toggle controls in the workout logger
+- API Streamlining: frontend requests are still mixed between direct `fetch` calls and `authFetch`, and the social views make separate calls that could be batched or cached
+- Routes/Endpoints: feed/comment routes are functional but should be normalized around a shared contract and pagination strategy
+- Auth & Security: social actions need additional ownership/visibility checks, schema validation should be tightened, and the JWT secret handling should remain environment-driven rather than relying on a fallback dev key
+
+### Pre-Phase 5 Priorities
+1. Align the frontend API usage with the shared client and remove duplicate auth helpers
+2. Add stronger ownership and visibility checks for follow/share/comment endpoints
+3. Tighten Pydantic validation for content length, visibility values, and response fields
+4. Add loading, error, and empty states for feed/discover/comment flows
+5. Add regression tests for social actions before deployment
 
 ---
 
@@ -140,15 +182,20 @@ Auth: JWT + bcrypt
 Database: SQLAlchemy ORM with Alembic migrations
 ```
 
-### Database Schema (Phase 1 Complete)
+### Database Schema (Phases 1-4)
 ```
 users (id, username, email, hashed_password, is_active)
   ├── workouts (id, user_id, date, notes)
   │   └── exercises (id, workout_id, name, muscle_group, notes)
   │       └── sets (id, exercise_id, weight, reps, set_number)
-  └── (Phase 2) settings (id, user_id, weight_unit, height, age, goal)
-      (Phase 2) nutrition_entries (id, user_id, date, meal, calories, macros)
-      (Phase 2) food_items (id, user_id, name, calories, macros)
+  ├── user_settings (id, user_id, weight_unit, height_cm, bodyweight_kg, age, fitness_goal)
+  ├── nutrition_entries (id, user_id, date, meal_type, meal_name, calories, macros)
+  ├── food_items (id, user_id, name, serving_size, calories, macros)
+  ├── workout_templates (id, user_id, name, description)
+  │   └── template_exercises (id, template_id, exercise_name, muscle_group, target_sets, target_reps)
+  ├── user_follows (id, follower_id, following_id, created_at)
+  ├── workout_shares (id, workout_id, visibility, created_at)
+  └── workout_comments (id, workout_id, user_id, content, created_at)
 ```
 
 ### API Endpoints Implemented
@@ -355,15 +402,16 @@ cd frontend && npm run dev
 | Metric | Value |
 |--------|-------|
 | Phase 1 Completion | 100% |
-| Lines of Code Added/Modified | ~500 |
-| Files Changed | 7 |
-| New Files Created | 12 |
-| Database Tables (Phase 1) | 6 |
-| API Endpoints (Phase 1) | 10 |
-| Phases Remaining | 4 |
-| Estimated Total Time | ~25 hours |
+| Phase 2 Completion | 100% |
+| Phase 3 Completion | 100% |
+| Phase 4 Foundation | 70% |
+| Documentation Audit | Updated |
+| Core Database Tables | 12+ |
+| API Endpoints (Core) | 20+ |
+| Phases Remaining Before Deployment | 1 (Phase 5)
+| Estimated Total Time to Phase 5 | ~8-10 hours |
 
 ---
 
-**Last Updated**: April 24, 2026
-**Status**: Phase 1 Complete ✅, Phase 2 Ready to Implement ⏳
+**Last Updated**: August 5, 2026
+**Status**: Phase 4 scaffold implemented 🟡, security and UX hardening still required before Phase 5 ⏳

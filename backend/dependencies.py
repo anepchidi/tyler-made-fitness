@@ -16,7 +16,7 @@ except ModuleNotFoundError:
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback-dev-key")
+SECRET_KEY = os.environ["SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
