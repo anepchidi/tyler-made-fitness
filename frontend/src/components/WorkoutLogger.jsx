@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API, authFetch } from '../api/client';
+import client from '../api/client';
 import { Zap, FileText, Plus } from 'lucide-react';
 
 export default function WorkoutLogger({ userId, onWorkoutSaved }) {
@@ -82,41 +82,19 @@ export default function WorkoutLogger({ userId, onWorkoutSaved }) {
     setError('');
 
     try {
-      const workoutRes = await authFetch(`${API}/users/me/workouts/`, {
-        method: 'POST',
-        body: JSON.stringify({
-          date: new Date().toISOString().split('T')[0],
-          notes: `Duration: ${fmt(seconds)}`,
-        }),
-      });
-
-      if (!workoutRes.ok) {
-        const errorData = await workoutRes.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to create workout');
-      }
-
-      const workoutData = await workoutRes.json();
+      const workoutData = await client.post('/users/me/workouts/', {
+      date: new Date().toISOString().split('T')[0],
+      notes: `Duration: ${fmt(seconds)}`,
+    });
       const workoutId = workoutData.id;
 
       for (const ex of cart) {
-        const exerciseRes = await authFetch(`${API}/workouts/${workoutId}/exercises/`, {
-          method: 'POST',
-          body: JSON.stringify({
-            name: ex.name,
-            muscle_group: ex.muscle_group,
-            notes: null,
-            sets: ex.sets.map((set, idx) => ({
-              reps: set.reps,
-              weight: set.weight,
-              set_number: idx + 1,
-            })),
-          }),
-        });
-
-        if (!exerciseRes.ok) {
-          const errorData = await exerciseRes.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to add exercise');
-        }
+        await client.post(`/workouts/${workoutId}/exercises/`, {
+        name: ex.name,
+        muscle_group: ex.muscle_group,
+        notes: null,
+        sets: ex.sets.map((set, idx) => ({ reps: set.reps, weight: set.weight, set_number: idx + 1 })),
+      });
       }
 
       setCart([]);

@@ -1,17 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, Award, Scale, Ruler, Calendar, Target, TrendingUp, Flame, Zap, Users } from 'lucide-react';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-// Helper function to make authenticated requests
-const authFetch = (url, options = {}) => {
-  const token = localStorage.getItem("workoutToken");
-  const headers = {
-    ...options.headers,
-    "Authorization": `Bearer ${token}`
-  };
-  return fetch(url, { ...options, headers });
-};
+import client from '../api/client';
 
 export default function Profile({ username, userId, workoutHistory = [], showSocialActions = false, viewUserId = null }) {
   const [unit, setUnit] = useState("kg");
@@ -33,23 +22,21 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
 
     const loadProfileData = async () => {
       try {
-        const settingsResponse = await authFetch(`${API}/users/me/settings`);
-        const settingsData = await settingsResponse.json();
+        const settingsData = await client.get('/users/me/settings');
         setUnit(settingsData.weight_unit || "kg");
         setHeight(settingsData.height_cm ? String(settingsData.height_cm) : "");
         setBodyweight(settingsData.bodyweight_kg ? String(settingsData.bodyweight_kg) : "");
         setAge(settingsData.age ? String(settingsData.age) : "");
         setGoal(settingsData.fitness_goal || "muscle");
 
-        const profileResponse = await authFetch(`${API}/users/${userId}/profile/public`);
-        if (profileResponse.ok) {
-          const profileData = await profileResponse.json();
+        try {
+          const profileData = await client.get(`/users/${userId}/profile/public`);
           setSocialCounts({
             follower_count: profileData.follower_count || 0,
             following_count: profileData.following_count || 0,
             workout_count: profileData.workout_count || 0,
-          });
-        }
+        });
+       } catch (_) { /* public stats are non-critical */ }
       } catch (err) {
         console.error("Failed to load settings:", err);
       } finally {
@@ -63,29 +50,17 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
   const save = async () => {
     try {
       setError("");
-      const res = await authFetch(`${API}/users/me/settings`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          weight_unit: unit,
-          height_cm: height ? parseFloat(height) : null,
-          bodyweight_kg: bodyweight ? parseFloat(bodyweight) : null,
-          age: age ? parseInt(age) : null,
-          fitness_goal: goal
-        })
+      await client.put('/users/me/settings', {
+        weight_unit: unit,
+        height_cm: height ? parseFloat(height) : null,
+        bodyweight_kg: bodyweight ? parseFloat(bodyweight) : null,
+        age: age ? parseInt(age) : null,
+        fitness_goal: goal,
       });
-
-      if (res.ok) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-      } else {
-        const errData = await res.json();
-        setError(errData.detail || "Failed to save settings");
-      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setError("Network error: " + err.message);
+      setError(err.message || "Failed to save settings");
     }
   };
 
@@ -113,12 +88,8 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
     setSocialBusy(true);
     setSocialMessage("");
     try {
-      const url = `${API}/users/${userId}/follow/${targetId}`;
-      const method = isFollowing ? 'DELETE' : 'POST';
-      const response = await authFetch(url, { method });
-      if (!response.ok) {
-        throw new Error('Unable to update follow state');
-      }
+      const path = `/users/${userId}/follow/${targetId}`;
+      isFollowing ? await client.delete(path) : await client.post(path);
       setIsFollowing((prev) => !prev);
       setSocialMessage(isFollowing ? 'Unfollowed successfully' : 'Following now');
     } catch (err) {

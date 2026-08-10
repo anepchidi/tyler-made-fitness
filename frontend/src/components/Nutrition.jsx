@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Apple, Search, Plus, X, Target, TrendingUp, Utensils, Coffee, Cookie } from 'lucide-react';
 
-import { API, authFetch } from '../api/client';
+import client from '../api/client';
 import { PRESETS } from '../data/presets';
 import { searchFood, getFoodDetails } from '../api/fatSecret'; 
 
@@ -32,8 +32,7 @@ export default function Nutrition({ userId }) {
       return;
     }
     const today = new Date().toISOString().split('T')[0];
-    authFetch(`${API}/users/me/nutrition/?start_date=${today}&end_date=${today}`)
-      .then(r => r.json())
+    client.get(`/users/me/nutrition/?start_date=${today}&end_date=${today}`)
       .then(data => {
         if (Array.isArray(data)) setEntries(data);
         setLoading(false);
@@ -49,22 +48,45 @@ export default function Nutrition({ userId }) {
     localStorage.setItem("nutritionGoals", JSON.stringify(goals));
   }, [goals]);
 
-  // 3. Remove Entry
+  // 3. Debounced Search Effect
+  useEffect(() => {
+    // Clear results if the query is empty
+    if (searchQuery.trim() === "") {
+      setSearchResults([]);
+      return;
+    }
+
+    // Set a timeout to delay the search
+    const delayDebounceFn = setTimeout(async () => {
+      setIsSearching(true);
+      setError(""); 
+      try {
+        const results = await searchFood(searchQuery);
+        setSearchResults(results);
+      } catch (err) {
+        console.error(err);
+        setError("Failed to search database.");
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    // Cleanup function to clear the timeout if user is still typing
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  // 4. Remove Entry
   const remove = async (id) => {
     if (!userId) return;
     try {
-      const res = await authFetch(`${API}/users/me/nutrition/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setEntries(prev => prev.filter(i => i.id !== id));
-      } else {
-        setError("Failed to delete entry");
-      }
+      await client.delete(`/users/me/nutrition/${id}`);
+      setEntries(prev => prev.filter(i => i.id !== id));
     } catch (err) {
-      setError("Network error: " + err.message);
+      setError(err.message || "Failed to delete entry");
     }
   };
   
-  // 4. Add by FatSecret ID
+  // 5. Add by FatSecret ID
   const handleAddById = async (foodId, mealType) => {
     try {
       setAddingId(foodId);
@@ -92,7 +114,7 @@ export default function Nutrition({ userId }) {
     }
   };
 
-  // 5. Core Add Function (Handles both Presets and FatSecret data)
+  // 6. Core Add Function (Handles both Presets and FatSecret data)
   const add = async (item, mealType = "breakfast") => {
     if (!userId) {
       setError("Please log in to track nutrition");
@@ -101,39 +123,19 @@ export default function Nutrition({ userId }) {
 
     try {
       const today = new Date().toISOString().split('T')[0];
-      const res = await authFetch(`${API}/users/me/nutrition/`, {
-        method: "POST",
-        body: JSON.stringify({
-          date: today,
-          meal_type: mealType,
-          meal_name: item.name || item.food_name,
-          calories: Math.round(item.calories || item.cal || 0),
-          protein_g: item.protein || 0,
-          carbs_g: item.carbs || 0,
-          fat_g: item.fat || 0,
-          // Micronutrients mapping
-          fiber_g: item.fiber || 0,
-          sugar_g: item.sugar || 0,
-          sodium_mg: item.sodium || 0,
-          potassium_mg: item.potassium || 0,
-          iron_pct: item.iron || 0,
-          calcium_pct: item.calcium || 0
-        })
+      const newEntry = await client.post('/users/me/nutrition/', {
+        date: today, meal_type: mealType, meal_name: item.name || item.food_name,
+        calories: Math.round(item.calories || item.cal || 0),
+        protein_g: item.protein || 0, carbs_g: item.carbs || 0, fat_g: item.fat || 0,
+        fiber_g: item.fiber || 0, sugar_g: item.sugar || 0, sodium_mg: item.sodium || 0,
+        potassium_mg: item.potassium || 0, iron_pct: item.iron || 0, calcium_pct: item.calcium || 0,
       });
-
-      if (res.ok) {
-        const newEntry = await res.json();
-        setEntries(prev => [...prev, newEntry]);
-      } else {
-        const errData = await res.json();
-        setError(errData.detail || "Failed to add entry");
-      }
+      setEntries(prev => [...prev, newEntry]);
     } catch (err) {
-      setError("Network error: " + err.message);
+      setError(err.message || "Failed to add entry");
     }
   };
 
-  // Calculate totals using API property names
   const totals = entries.reduce((acc, i) => ({
     cal: acc.cal + (i.calories || 0), 
     protein: acc.protein + (i.protein_g || 0),
@@ -166,25 +168,6 @@ export default function Nutrition({ userId }) {
   const saveGoals = () => {
     setGoals(tempGoals);
     setEditingGoals(false);
-  };
-
-  const handleSearchKeyPress = async (e) => {
-    if (e.key === 'Enter' && searchQuery.trim() !== '') {
-      setIsSearching(true);
-      setError(""); 
-      try {
-        const results = await searchFood(searchQuery);
-        console.log(results);
-        setSearchResults(results);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to search database.");
-      } finally {
-        setIsSearching(false);
-      }
-    } else if (e.key === 'Enter' && searchQuery.trim() === '') {
-      setSearchResults([]); 
-    }
   };
 
   const filteredPresets = PRESETS.filter(p => 
@@ -408,13 +391,6 @@ export default function Nutrition({ userId }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {Object.entries(mealGroups).map(([mealName, items]) => {
             const Icon = mealIcons[mealName];
-            const mealTotals = items.reduce((acc, i) => ({
-              cal: acc.cal + i.calories,
-              protein: acc.protein + i.protein_g,
-              carbs: acc.carbs + i.carbs_g,
-              fat: acc.fat + i.fat_g
-            }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
-
             return (
               <div key={mealName} style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -500,7 +476,6 @@ export default function Nutrition({ userId }) {
                 placeholder="Search foods..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyPress}
                 style={{
                   ...inp,
                   width: "100%",
@@ -510,10 +485,10 @@ export default function Nutrition({ userId }) {
               />
             </div>
 
-          <select 
-            value={searchMealType}
-            onChange={e => setSearchMealType(e.target.value)}
-            style={{ ...inp, width: "140px", cursor: "pointer"}}
+            <select 
+              value={searchMealType}
+              onChange={e => setSearchMealType(e.target.value)}
+              style={{ ...inp, width: "140px", cursor: "pointer"}}
             >
               <option value="breakfast">Breakfast</option>
               <option value="lunch">Lunch</option>
@@ -575,13 +550,13 @@ export default function Nutrition({ userId }) {
               </div>
             )}
 
-{/* Loading Indicator */}
-{isSearching && !addingId && <div style={{ textAlign: "center", color: "#666", padding: "20px" }}>Searching database...</div>}
+            {/* Loading Indicator */}
+            {isSearching && !addingId && <div style={{ textAlign: "center", color: "#666", padding: "20px" }}>Searching database...</div>}
 
-{/* Existing Presets Header (Optional, for clarity) */}
-{filteredPresets.length > 0 && (
-  <h4 style={{ margin: "0 0 12px", color: "#111", fontSize: "16px" }}>Quick Add</h4>
-)}
+            {/* Existing Presets Header */}
+            {filteredPresets.length > 0 && (
+              <h4 style={{ margin: "0 0 12px", color: "#111", fontSize: "16px" }}>Quick Add</h4>
+            )}
             {filteredPresets.map(p => (
               <div key={p.name} style={{
                 display: "flex",

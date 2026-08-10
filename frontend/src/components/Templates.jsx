@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { API, authFetch } from '../api/client';
+import client, { API } from '../api/client';
 import { Plus, Trash2, Search, ChevronDown, Dumbbell, ImageIcon } from 'lucide-react';
 
 const MUSCLE_GROUPS = [
@@ -33,9 +33,7 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/users/me/templates`);
-      if (!res.ok) throw new Error('Unable to load templates');
-      const data = await res.json();
+      const data = await client.get('/users/me/templates');
       setTemplates(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message || 'Failed to load templates');
@@ -132,21 +130,11 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
     }));
 
     try {
-      const res = await authFetch(`${API}/users/me/templates`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: newName.trim(),
-          description: newDescription.trim(),
-          exercises: formattedExercises,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || 'Unable to save template');
-      }
-
-      const created = await res.json();
+      const created = await client.post('/users/me/templates', {
+      name: newName.trim(),
+      description: newDescription.trim(),
+      exercises: formattedExercises,
+    });
       setTemplates((prev) => [created, ...prev]);
       setCreating(false);
       setNewName('');

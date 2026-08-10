@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { API, authFetch } from './api/client';
+import client from './api/client';
 import AuthPage from './components/AuthPage';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -27,8 +27,7 @@ export default function App() {
     const loadExercises = async () => {
       setIsLoadingExercises(true);
       try {
-        const res = await fetch(`${API}/exercises/library`);
-        const data = await res.json();
+        const data = await client.get('/exercises/library');
         if (Array.isArray(data)) {
           setExercises(data);
         }
@@ -51,8 +50,7 @@ export default function App() {
   const fetchHistory = async () => {
     if (!userId) return;
     try {
-      const res = await authFetch(`${API}/users/me/workouts/`);
-      const data = await res.json();
+      const data = await client.get('/users/me/workouts/');
       if (Array.isArray(data)) {
         setWorkoutHistory(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
       }
@@ -81,6 +79,12 @@ export default function App() {
     setWorkoutHistory([]);
     setActivePage('dashboard');
   };
+
+  useEffect(() => {
+    const onUnauthorized = () => handleLogout();
+    window.addEventListener('auth:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
+  }, []);
 
   const handleLoadTemplate = (template) => {
     const cartItems = (template.exercises || [])
