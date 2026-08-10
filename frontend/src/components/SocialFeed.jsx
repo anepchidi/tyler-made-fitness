@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, Send, Users, Dumbbell, ChevronDown, ChevronUp } from 'lucide-react';
-import { authFetch } from '../api/client';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import client from '../api/client';
 
 export default function SocialFeed() {
   const [activeTab, setActiveTab] = useState('feed');
@@ -20,11 +18,7 @@ export default function SocialFeed() {
   const loadFeed = async () => {
     try {
       setLoading(true);
-      const response = await authFetch(`${API}/workouts/feed/public`);
-      if (!response.ok) {
-        throw new Error('Unable to load the public feed');
-      }
-      const data = await response.json();
+      const data = await client.get('/workouts/feed/public');
       setFeed(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message || 'Unable to load public feed');
@@ -35,11 +29,7 @@ export default function SocialFeed() {
 
   const loadComments = async (workoutId) => {
     try {
-      const response = await authFetch(`${API}/workouts/${workoutId}/comments`);
-      if (!response.ok) {
-        throw new Error('Unable to load comments');
-      }
-      const data = await response.json();
+      const data = await client.get(`/workouts/${workoutId}/comments`);
       setCommentsByWorkout((prev) => ({ ...prev, [workoutId]: data }));
     } catch (err) {
       console.error(err);
@@ -59,12 +49,7 @@ export default function SocialFeed() {
     if (!content) return;
 
     try {
-      const response = await authFetch(`${API}/workouts/${workoutId}/comments`, {
-        method: 'POST',
-        body: JSON.stringify({ content }),
-      });
-      if (!response.ok) throw new Error('Unable to post comment');
-      const comment = await response.json();
+      const comment = await client.post(`/workouts/${workoutId}/comments`, { content });
       setCommentsByWorkout((prev) => ({
         ...prev,
         [workoutId]: [...(prev[workoutId] || []), comment],

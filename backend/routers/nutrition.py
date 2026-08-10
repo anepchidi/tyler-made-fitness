@@ -25,15 +25,33 @@ async def get_fs_token():
     if fs_access_token["token"] and time.time() < fs_access_token["expires"] - 60:
         return fs_access_token["token"]
 
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            "https://oauth.fatsecret.com/connect/token",
-            auth=(FS_CLIENT_ID, FS_CLIENT_SECRET),
-            data={"grant_type": "client_credentials", "scope": "basic"},
-        )
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                "https://oauth.fatsecret.com/connect/token",
+                auth=(FS_CLIENT_ID, FS_CLIENT_SECRET),
+                data={"grant_type": "client_credentials", "scope": "basic"},
+                timeout=10.0,
+            )
+ 
+        if res.status_code != 200:
+            raise HTTPException(status_code=502, detail="FatSecret authentication failed")
+ 
         data = res.json()
-        fs_access_token["token"] = time.time() + data.get("expires_in", 86400)
-        return data["access_token"]
+        access_token = data["access_token"]
+ 
+        fs_access_token["token"] = access_token
+        fs_access_token["expires"] = time.time() + data.get("expires_in", 86400)
+        return access_token
+ 
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="FatSecret authentication timed out")
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Unable to reach FatSecret authentication service")
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=502, detail="Invalid response from FatSecret authentication service")
 
 
 @router.post("/users/me/nutrition/", response_model=schemas.NutritionEntry)
@@ -99,31 +117,48 @@ def delete_nutrition_entry(
 
 @router.get("/nutrition/search")
 async def search_foods(query: str, current_user: models.User = Depends(get_current_user)):
-    token = await get_fs_token()
-
-    async with httpx.AsyncClient() as client:
-        res = await client.get(
-            "https://platform.fatsecret.com/rest/server.api",
-            params={
-                "method": "foods.search",
-                "search_expression": query,
-                "format": "json",
-                "max_results": 10,
-            },
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+    try:
+        token = await get_fs_token()
+ 
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                "https://platform.fatsecret.com/rest/server.api",
+                params={
+                    "method": "foods.search",
+                    "search_expression": query,
+                    "format": "json",
+                    "max_results": 10,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0,
+            )
+ 
         if res.status_code != 200:
-            raise HTTPException(status_code=500, detail="Failed to search database")
-
+            raise HTTPException(status_code=502, detail="FatSecret API unavailable")
+ 
         return res.json()
+ 
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        print(f"FatSecret timeout for query={query}")
+        raise HTTPException(status_code=504, detail="FatSecret API request timed out")
+    except httpx.RequestError as e:
+        print(f"FatSecret connection error for query={query}: {str(e)}")
+        raise HTTPException(status_code=502, detail="Unable to reach FatSecret API")
+    except (KeyError, ValueError, TypeError) as e:
+        print(f"FatSecret response parsing error for query={query}: {str(e)}")
+        raise HTTPException(status_code=502, detail="Unexpected response format from FatSecret API")
+    except Exception as e:
+        print(f"Unexpected FatSecret search error for query={query}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error searching food database")
 
 
 @router.get("/nutrition/food/{food_id}")
 async def get_food_details(food_id: str, current_user: models.User = Depends(get_current_user)):
-    token = await get_fs_token()
-
     try:
+        token = await get_fs_token()
+ 
         async with httpx.AsyncClient() as client:
             res = await client.get(
                 "https://platform.fatsecret.com/rest/server.api",
@@ -135,48 +170,57 @@ async def get_food_details(food_id: str, current_user: models.User = Depends(get
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10.0,
             )
-
-            if res.status_code != 200:
-                raise HTTPException(status_code=502, detail="FatSecret API unavailable")
-
-            data = res.json()
-
-            if "food" not in data:
-                raise HTTPException(status_code=404, detail="Food not found")
-
-            food = data["food"]
-            servings_data = food.get("servings", {})
-            if not servings:
-                raise HTTPException(status_code=400, detail="No serving information available")
-
-            serving = servings[0] if isinstance(servings, list) else servings
-
-            return {
-                "food": {
-                    "food_name": food.get("food_name", ""),
-                    "food_id": food.get("food_id", food_id),
-                    "servings": {
-                        "serving": {
-                            "calories": float(serving.get("calories", 0)),
-                            "protein": float(serving.get("protein", 0)),
-                            "carbohydrate": float(serving.get("carbohydrate", 0)),
-                            "fat": float(serving.get("fat", 0)),
-                            "fiber": float(serving.get("fiber", 0)),
-                            "sugar": float(serving.get("sugar", 0)),
-                            "sodium": float(serving.get("sodium", 0)),
-                            "potassium": float(serving.get("potassium", 0)),
-                            "iron": float(serving.get("iron", 0)),
-                            "calcium": float(serving.get("calcium", 0)),
-                            "serving_description": serving.get("serving_description", "1 serving"),
-                        }
-                    },
-                }
+ 
+        if res.status_code != 200:
+            raise HTTPException(status_code=502, detail="FatSecret API unavailable")
+ 
+        data = res.json()
+ 
+        if "food" not in data:
+            raise HTTPException(status_code=404, detail="Food not found")
+ 
+        food = data["food"]
+        servings_data = food.get("servings", {})
+        if not servings_data:
+            raise HTTPException(status_code=400, detail="No serving information available")
+ 
+        serving = servings_data[0] if isinstance(servings_data, list) else servings_data
+ 
+        return {
+            "food": {
+                "food_name": food.get("food_name", ""),
+                "food_id": food.get("food_id", food_id),
+                "servings": {
+                    "serving": {
+                        "calories": float(serving.get("calories", 0)),
+                        "protein": float(serving.get("protein", 0)),
+                        "carbohydrate": float(serving.get("carbohydrate", 0)),
+                        "fat": float(serving.get("fat", 0)),
+                        "fiber": float(serving.get("fiber", 0)),
+                        "sugar": float(serving.get("sugar", 0)),
+                        "sodium": float(serving.get("sodium", 0)),
+                        "potassium": float(serving.get("potassium", 0)),
+                        "iron": float(serving.get("iron", 0)),
+                        "calcium": float(serving.get("calcium", 0)),
+                        "serving_description": serving.get("serving_description", "1 serving"),
+                    }
+                },
             }
-
+        }
+ 
     except HTTPException:
         raise
+    except httpx.TimeoutException:
+        print(f"FatSecret timeout for food_id={food_id}")
+        raise HTTPException(status_code=504, detail="FatSecret API request timed out")
+    except httpx.RequestError as e:
+        print(f"FatSecret connection error for food_id={food_id}: {str(e)}")
+        raise HTTPException(status_code=502, detail="Unable to reach FatSecret API")
+    except (KeyError, ValueError, TypeError) as e:
+        print(f"FatSecret response parsing error for food_id={food_id}: {str(e)}")
+        raise HTTPException(status_code=502, detail="Unexpected response format from FatSecret API")
     except Exception as e:
-        print(f"FatSecret food details error: {str(e)}")
+        print(f"Unexpected FatSecret food details error for food_id={food_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error retrieving food details")
 
 
