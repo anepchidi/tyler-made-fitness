@@ -1,4 +1,4 @@
-import { API, authFetch } from '../api/client';
+import client from '../api/client';
 import { Calendar, Trash2, Dumbbell, TrendingUp, Clock } from 'lucide-react';
 import { useState } from 'react';
 
@@ -13,8 +13,12 @@ export default function History({ workoutHistory, onDelete }) {
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this workout? This cannot be undone.")) return;
-    const res = await authFetch(`${API}/workouts/${id}`, { method: "DELETE" });
-    if (res.ok) onDelete();
+    try {
+      await client.delete(`/workouts/${id}`);
+      onDelete();
+    } catch (error) {
+      console.error("Failed to delete workout:", error);
+    }
   };
 
   // Filter by month

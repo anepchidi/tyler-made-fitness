@@ -74,6 +74,9 @@ def create_nutrition_entry(
         fiber_g=entry_data.get("fiber_g", 0.0),
         sugar_g=entry_data.get("sugar_g", 0.0),
         sodium_mg=entry_data.get("sodium_mg", 0.0),
+        potassium_mg=entry_data.get("potassium_mg", 0.0),
+        iron_pct=entry_data.get("iron_pct", 0.0),
+        calcium_pct=entry_data.get("calcium_pct", 0.0),
     )
 
     db.add(db_entry)

@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional
 from datetime import date, datetime
 
@@ -18,6 +18,11 @@ class WeightUnit(str, Enum):
 class Visibility(str, Enum):
     PUBLIC = "public"
     PRIVATE = "private"
+
+class ProgressGranularity(str, Enum):
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
 
 # --- EXERCISE LIBRARY SCHEMAS ---
 class ExerciseLibraryBase(BaseModel):
@@ -192,26 +197,70 @@ class WorkoutTemplate(WorkoutTemplateBase):
         from_attributes = True
 
 # --- PROGRESS SCHEMAS ---
+class VolumeProgressQuery(BaseModel):
+    """Query guard for GET /users/me/progress/volume."""
+    exercise: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    granularity: ProgressGranularity = ProgressGranularity.WEEK
+    cumulative: bool = False
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+    class Config:
+        extra = "forbid"
+
+    @field_validator("exercise")
+    @classmethod
+    def _normalize_exercise(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+           return None
+        v = v.strip()
+        if not v:
+            raise ValueError("exercise must not be blank")
+        return v
+
+    @model_validator(mode="after")
+    def _check_range(self):
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("start_date must be on or before end_date")
+        return self
+
 class StrengthProgressPoint(BaseModel):
     date: date
-    weight: float
-    volume: float
+    weight: float = Field(default=0.0, ge=0)
+    volume: float = Field(default=0.0, ge=0)
 
 class StrengthProgressResponse(BaseModel):
     exercise: str
     data: List[StrengthProgressPoint] = Field(default_factory=list)
 
+class VolumeProgressPoint(BaseModel):
+    period_start: date
+    period_end: date
+    volume: float = Field(default=0.0, ge=0)
+    sets: int = Field(default=0, ge=0)
+    reps: int = Field(default=0, ge=0)
+    workouts: int = Field(default=0, ge=0)
+
+class VolumeProgressResponse(BaseModel):
+    exercise: Optional[str] = None          # null == aggregated across all exercises
+    granularity: ProgressGranularity
+    cumulative: bool = False
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    total_volume: float = Field(default=0.0, ge=0)
+    data: List[VolumeProgressPoint] = Field(default_factory=list)
+
 class PersonalRecord(BaseModel):
     exercise: str
-    max_weight: float
-    max_volume: float
+    max_weight: float = Field(default=0.0, ge=0)
+    max_volume: float = Field(default=0.0, ge=0)
     last_workout_date: Optional[date] = None
 
 class StatsResponse(BaseModel):
-    total_workouts: int
-    total_volume: float
+    total_workouts: int  = Field(default=0.0, ge=0)
+    total_volume: float  = Field(default=0.0, ge=0)
     personal_records: List[PersonalRecord] = Field(default_factory=list)
-    current_streak: int
+    current_streak: int = Field(default=0, ge=0)
 
 # --- WORKOUT SCHEMAS ---
 class WorkoutBase(BaseModel):
