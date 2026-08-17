@@ -1,14 +1,7 @@
-import { API, authFetch } from './client';
+import client from '../api/client';
 
 export const searchFood = async (query) => {
-  const res = await authFetch(`${API}/nutrition/search?query=${encodeURIComponent(query)}`);
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Search failed');
-  }
-
-  const data = await res.json();
+  const data = await client.get(`/nutrition/search?query=${encodeURIComponent(query)}`);
 
   const foods = data.foods?.food;
   if (!foods) return [];
@@ -17,14 +10,10 @@ export const searchFood = async (query) => {
 };
 
 export const getFoodDetails = async (foodId) => {
-  const res = await authFetch(`${API}/nutrition/food/${foodId}`);
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || 'Failed to fetch food details');
-  }
-  
-  const data = await res.json();
-  const food = data.food;
+  const data = await client.get(`/nutrition/food/${foodId}`);
+  const food = data?.food;
+
+  if (!food) return null;
   
   // Extract the first serving
   const s = Array.isArray(food.servings.serving) 

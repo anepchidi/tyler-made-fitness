@@ -17,7 +17,7 @@ import {
   ImageIcon,
   ChevronDown,
 } from 'lucide-react';
-import { API, authFetch } from '../api/client';
+import client, { API } from '../api/client';
 
 const MUSCLE_GROUPS = [
   'All Muscles',
@@ -59,10 +59,28 @@ const getImageSrc = (exercise) => {
   return `${API}${exercise.image_url}`;
 };
 
+const parseApiDate = (value) => {
+  if (!value) return null;
+  const [y, m, d] = String(value).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+};
+
+const formatDay = (value) => {
+  const parsed = parseApiDate(value);
+  return parsed
+    ? parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '—';
+};
+
+const toMessage = (err, fallback) =>
+  err instanceof ApiError ? err.message : err?.message || fallback;
+
 export default function ExerciseAnalytics({ exercises = [], setExercises, isLoadingExercises }) {
   const [stats, setStats] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [strengthData, setStrengthData] = useState([]);
+  const [volumeData, setVolumeData] = useState([]);
   const [chartType, setChartType] = useState('weight');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState('All Muscles');
@@ -73,51 +91,88 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [statsError, setStatsError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadStats = async () => {
       try {
-        const res = await authFetch(`${API}/users/me/stats`);
-        if (!res.ok) {
-          throw new Error('Failed to load analytics stats');
-        }
-        const payload = await res.json();
-        setStats(payload);
+        const payload = await client.get(`/users/me/stats`);
+        if (cancelled) return;
+        setStats(payload || null);
+        setStatsError('');
       } catch (err) {
-        setError(err.message || 'Unable to load analytics stats');
+        if (cancelled) return;
+        setStats(null);
+        setStatsError(toMessage(err, 'Unable to load analytics stats'));
       }
     };
 
     loadStats();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+    }, []);
 
   useEffect(() => {
     if (!selectedExercise?.name) {
       setStrengthData([]);
-      return;
+      setVolumeData([]);
+      setError('');
+      return undefined;
     }
 
-    const loadExerciseDetails = async (exerciseName) => {
+    let cancelled = false;
+    const exerciseName = selectedExercise.name;
+
+    const loadExerciseDetails = async () => {
       setLoadingProgress(true);
       setError('');
 
-      try {
-        const res = await authFetch(
-          `${API}/users/me/progress/strength?exercise=${encodeURIComponent(exerciseName)}`,
+      const qs = new URLSearchParams({ exercise: exerciseName });
+      const volumeQs = new URLSearchParams({
+        exercise: exerciseName,
+        granularity: 'week',
+        cumulative: 'false',
+      });
+
+      const [strengthRes, volumeRes] = await Promise.allSettled([
+        client.get(`/users/me/progress/strength?${qs}`),
+        client.get(`/users/me/progress/volume?${volumeQs}`),
+      ]);
+
+      if (cancelled) return;
+
+      const failures = [];
+
+      if (strengthRes.status === 'fulfilled') {
+        setStrengthData(
+          Array.isArray(strengthRes.value?.data) ? strengthRes.value.data : [],
         );
-        if (!res.ok) {
-          throw new Error('Failed to load progress history');
-        }
-        const payload = await res.json();
-        setStrengthData(Array.isArray(payload.data) ? payload.data : []);
-      } catch (err) {
-        setError(err.message || 'Unable to load progress history');
-      } finally {
-        setLoadingProgress(false);
+      } else {
+        setStrengthData([]);
+        failures.push(toMessage(strengthRes.reason, 'strength history'));
       }
+
+      if (volumeRes.status === 'fulfilled') {
+        setVolumeData(
+          Array.isArray(volumeRes.value?.data) ? volumeRes.value.data : [],
+        );
+      } else {
+        setVolumeData([]);
+        failures.push(toMessage(volumeRes.reason, 'volume history'));
+      }
+
+    // One panel failing must not blank the other.
+      setError(failures.length ? failures.join(' · ') : '');
+      setLoadingProgress(false);
     };
 
-    loadExerciseDetails(selectedExercise.name);
+    loadExerciseDetails();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedExercise?.name]);
 
   const filteredExercises = useMemo(() => {
@@ -129,17 +184,37 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
     });
   }, [exercises, searchQuery, selectedMuscle]);
 
-  const chartData = useMemo(
+  const strengthChartData = useMemo(
     () =>
-      (strengthData || []).map((point) => ({
-        date: new Date(point.date).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }),
-        weight: point.weight,
-        volume: point.volume,
-      })),
+      (strengthData || [])
+        .filter((point) => point?.date)
+        .map((point) => ({
+          date: formatDay(point.date),
+          weight: Number(point.weight) || 0,
+          volume: Number(point.volume) || 0,
+        })),
     [strengthData],
+  );
+
+  const volumeChartData = useMemo(
+    () =>
+      (volumeData || [])
+        .filter((point) => point?.period_start)
+        .map((point) => ({
+          date: formatDay(point.period_start),
+          volume: Number(point.volume) || 0,
+          sets: Number(point.sets) || 0,
+          reps: Number(point.reps) || 0,
+        })),
+  [ volumeData],
+  );
+
+  const activeChartData =
+    chartType === 'weight' ? strengthChartData : volumeChartData;
+
+  const totalVolume = useMemo(
+    () => volumeChartData.reduce((sum, point) => sum + point.volume, 0),
+    [volumeChartData],
   );
 
   const currentPR = stats?.personal_records?.find(
@@ -147,12 +222,12 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
   );
 
   const improvement = useMemo(() => {
-    if (chartData.length < 2) return null;
-    const first = chartData[0].weight;
-    const last = chartData[chartData.length - 1].weight;
-    if (!first) return null;
+    if (strengthChartData.length < 2) return null;
+    const first = strengthChartData[0].weight;
+    const last = strengthChartData[strengthChartData.length - 1].weight;
+    if (!Number.isFinite(first) || first <= 0) return null;
     return (((last - first) / first) * 100).toFixed(1);
-  }, [chartData]);
+  }, [strengthChartData]);
 
   const handleUploadExercise = async (event) => {
     event.preventDefault();
@@ -173,17 +248,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
         formData.append('image', imageFile);
       }
 
-      const res = await authFetch(`${API}/exercises/library/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.detail || 'Failed to upload custom exercise');
-      }
-
-      const created = await res.json();
+      const created = await client.post('/exercises/library/upload', formData);
       setExercises((prev) => [...prev, created]);
       setSelectedExercise(created);
       setNewExerciseName('');
@@ -191,7 +256,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
       setImageFile(null);
       setShowAddForm(false);
     } catch (err) {
-      setError(err.message || 'Unable to save custom exercise');
+      setError(toMessage(err, 'Unable to save custom exercise'));
     } finally {
       setUploading(false);
     }
@@ -569,6 +634,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
 
       <div style={styles.shell}>
         <section style={styles.leftPanel}>
+          {statsError && <div style={styles.error}>{statsError}</div>}
           {error && <div style={styles.error}>{error}</div>}
 
           {!selectedExercise ? (
@@ -619,14 +685,20 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
                   </div>
                   <div style={styles.statCard}>
                     <span style={styles.statLabel}>Logged Sessions</span>
-                    <span style={styles.statValue}>{chartData.length}</span>
+                    <span style={styles.statValue}>{strengthChartData.length}</span>
+                  </div>
+                  <div style={styles.statCard}>
+                    <span style={styles.statLabel}>Total Volume</span> 
+                    <span style={styles.statValue}>
+                        {volumeChartData.length ? `${Math.round(totalVolume)} kg` : '—'}
+                    </span>
                   </div>
                   <div style={styles.statCard}>
                     <span style={styles.statLabel}>Improvement</span>
                     <span style={styles.statValue}>
                       {improvement === null
                         ? '—'
-                        : `${improvement > 0 ? '+' : ''}${improvement}%`}
+                        : `${Number(improvement) > 0 ? '+' : ''}${improvement}%`}
                     </span>
                   </div>
                 </div>
@@ -634,7 +706,11 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
 
               <div style={styles.chartCard}>
                 <div style={styles.chartHeader}>
-                  <h3 style={styles.chartTitle}>Performance Trend</h3>
+                  <h3 style={styles.chartTitle}>
+                    {chartType === 'weight'
+                    ? 'Max Weight Trend'
+                     : 'Weekly Volume'}
+                  </h3>
                   <div style={styles.chartActionGroup}>
                     {[
                       { id: 'weight', label: 'Max Weight' },
@@ -657,15 +733,17 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
 
                 {loadingProgress ? (
                   <div style={styles.placeholder}>Loading progress history...</div>
-                ) : chartData.length === 0 ? (
+                ) : activeChartData.length === 0 ? (
                   <div style={styles.placeholder}>
-                    No progress history recorded for this exercise yet.
+                    {chartType === 'weight'
+                      ? `No sets logged for ${selectedExercise.name} yet — log a workout to start tracking strength.`
+                      : `No volume recorded for ${selectedExercise.name} yet — volume appears once you log weight and reps.`}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={320}>
                     {chartType === 'weight' ? (
                       <LineChart
-                        data={chartData}
+                        data={strengthChartData}
                         margin={{ top: 12, right: 16, left: -10, bottom: 0 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
@@ -696,7 +774,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
                       </LineChart>
                     ) : (
                       <BarChart
-                        data={chartData}
+                        data={volumeChartData}
                         margin={{ top: 12, right: 16, left: -10, bottom: 0 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
@@ -710,6 +788,10 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
                           stroke="#e5e7eb"
                         />
                         <Tooltip
+                          labelFormatter={(label) => `Week of ${label}`}
+                          formatter={(value, name) =>
+                            name === 'volume' ? [`${Math.round(value)} kg`, 'Volume'] : [value, name]
+                          }
                           contentStyle={{
                             backgroundColor: '#ffffff',
                             borderRadius: '12px',
