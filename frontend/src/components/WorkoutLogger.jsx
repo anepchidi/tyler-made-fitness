@@ -2,7 +2,13 @@ import { useState, useEffect } from 'react';
 import client from '../api/client';
 import { Zap, FileText, Plus } from 'lucide-react';
 
-export default function WorkoutLogger({ userId, onWorkoutSaved }) {
+const clampInt = (value, min, max, fallback) => {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < min) return fallback;
+  return Math.min(n, max);
+};
+
+export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
   const [cart, setCart] = useState(() => {
     try {
       const saved = localStorage.getItem('activeCart');
@@ -35,6 +41,37 @@ export default function WorkoutLogger({ userId, onWorkoutSaved }) {
     localStorage.setItem('isWorkoutActive', isActive.toString());
   }, [cart, seconds, isActive]);
 
+  useEffect(() => {
+    if (!template) return;
+    let cancelled = false;
+    const buildCartFromTemplate = async () => {
+      setTemplateLoading(true);
+      const templateExercises = Array.isArray(template.exercises) ? template.exercises : [];
+      const built = await Promise.all(templateExercises.map(async (te) => {
+        const safeSetCount = clampInt(te?.target_sets, 1, 20, 1);   // fallback: 1 set
+        const safeReps = clampInt(te?.target_reps, 1, 100, 10);     // fallback: 10 reps
+        let lastWeight = '', lastReps = '';
+        try {
+          const latest = await client.get(`/users/me/exercises/${encodeURIComponent(te?.exercise_name || '')}/latest`);
+          if (latest?.has_history) {
+            lastWeight = latest.weight != null ? String(latest.weight) : '';
+            lastReps = latest.reps != null ? String(latest.reps) : '';
+          }
+        } catch { /* no history — leave blank placeholders */ }
+        return {
+          name: te?.exercise_name || 'Exercise',
+          muscle_group: te?.muscle_group || 'General',
+          sets: Array.from({ length: safeSetCount }, () => ({
+            id: Date.now() + Math.random(), weight: lastWeight, reps: lastReps || String(safeReps),
+          })),
+        };
+      }));
+      if (!cancelled) { setCart(built); setIsActive(false); setSeconds(0); setTemplateLoading(false); }
+    };
+    buildCartFromTemplate();
+    return () => { cancelled = true; };
+  }, [template]);
+
   const addSet = (name) =>
     setCart((prev) =>
       prev.map((ex) =>
@@ -47,6 +84,8 @@ export default function WorkoutLogger({ userId, onWorkoutSaved }) {
       ),
     );
 
+  const val = field === 'reps' ? sanitizeRepsInput(rawVal) : sanitizeWeightInput(rawVal);
+  
   const updateSet = (name, setId, field, val) =>
     setCart((prev) =>
       prev.map((ex) =>
@@ -54,7 +93,7 @@ export default function WorkoutLogger({ userId, onWorkoutSaved }) {
           ? ex
           : {
               ...ex,
-              sets: ex.sets.map((s) => (s.id !== setId ? s : { ...s, [field]: parseInt(val, 10) || 0 })),
+              sets: ex.sets.map((s) => (s.id !== setId ? s : { ...s, [field]: val })),
             },
       ),
     );
@@ -93,7 +132,11 @@ export default function WorkoutLogger({ userId, onWorkoutSaved }) {
         name: ex.name,
         muscle_group: ex.muscle_group,
         notes: null,
-        sets: ex.sets.map((set, idx) => ({ reps: set.reps, weight: set.weight, set_number: idx + 1 })),
+        sets: ex.sets.map((set, idx) => ({
+          reps: Math.max(parseInt(set.reps, 10) || 0, 1),
+          weight: Math.max(parseFloat(set.weight) || 0, 0),
+          set_number: idx + 1,
+        })),
       });
       }
 

@@ -2,7 +2,7 @@ from collections import OrderedDict
 from datetime import date as date_type, timedelta
 from typing import Annotated, Dict, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -95,9 +95,12 @@ def delete_workout(
     return {"message": "Workout deleted successfully"}
 
 
-@router.get("/users/me/exercises/{exercise_name}/latest")
+@router.get(
+    "/users/me/exercises/{exercise_name}/latest",
+    response_model=schemas.LatestExerciseStats,
+)
 def get_latest_exercise_stats(
-    exercise_name: str,
+    exercise_name: str = Path(..., min_length=1, max_length=100),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -110,9 +113,9 @@ def get_latest_exercise_stats(
         .first()
     )
     if not latest_exercise or not latest_exercise.sets:
-        return {"weight": 0, "reps": 0}
-    last_set = latest_exercise.sets[-1]
-    return {"weight": last_set.weight, "reps": last_set.reps}
+        return schemas.LatestExerciseStats(weight=0.0, reps=0, has_history=False)
+    last_set = max(latest_exercise.sets, key=lambda s: s.set_number or 0)
+    return schemas.LatestExerciseStats(weight=last_set.weight or 0.0, reps=last_set.reps or 0, has_history=True)
 
 def _bucket_bounds(
     day: date_type,

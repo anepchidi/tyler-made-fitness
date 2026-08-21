@@ -146,6 +146,7 @@ def create_template_for_user(user_id: int, template: schemas.WorkoutTemplateCrea
             muscle_group=exercise_data.muscle_group,
             target_sets=exercise_data.target_sets,
             target_reps=exercise_data.target_reps,
+            target_weight=getattr(exercise_data, "target_weight", 0.0),
         )
         db.add(db_exercise)
 
