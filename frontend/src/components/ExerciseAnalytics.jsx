@@ -73,8 +73,7 @@ const formatDay = (value) => {
     : '—';
 };
 
-const toMessage = (err, fallback) =>
-  err instanceof ApiError ? err.message : err?.message || fallback;
+const toMessage = (err, fallback) => err?.message || fallback;
 
 export default function ExerciseAnalytics({ exercises = [], setExercises, isLoadingExercises }) {
   const [stats, setStats] = useState(null);
@@ -734,10 +733,14 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
                 {loadingProgress ? (
                   <div style={styles.placeholder}>Loading progress history...</div>
                 ) : activeChartData.length === 0 ? (
-                  <div style={styles.placeholder}>
-                    {chartType === 'weight'
-                      ? `No sets logged for ${selectedExercise.name} yet — log a workout to start tracking strength.`
-                      : `No volume recorded for ${selectedExercise.name} yet — volume appears once you log weight and reps.`}
+                  <div style={styles.emptyChartBanner}>
+                    <TrendingUp size={28} color="#9ca3af" />
+                    <p style={styles.emptyChartTitle}>
+                      {chartType === 'weight'
+                        ? `No strength history found for ${selectedExercise.name} yet.`
+                        : `No volume history found for ${selectedExercise.name} yet.`}
+                    </p>
+                    <p style={styles.emptyChartSubtitle}>Complete a workout to see progress!</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={320}>

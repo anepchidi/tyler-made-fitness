@@ -23,6 +23,7 @@ export default function App() {
   const [isLoadingExercises, setIsLoadingExercises] = useState(true);
   const [workoutHistory, setWorkoutHistory] = useState([]);
 
+
   useEffect(() => {
     const loadExercises = async () => {
       setIsLoadingExercises(true);
@@ -87,6 +88,8 @@ export default function App() {
   }, []);
 
   const handleLoadTemplate = (template) => {
+    setSelectedTemplate(template);
+    setActivePage('workout');
     const cartItems = (template.exercises || [])
       .map((exercise, index) => {
         const name = typeof exercise === 'string'
@@ -120,7 +123,7 @@ export default function App() {
         isLoadingExercises={isLoadingExercises}
       />
     ),
-    workout: <WorkoutLogger userId={userId} onWorkoutSaved={() => { fetchHistory(); setActivePage('history'); }} />,
+    workout: <WorkoutLogger userId={userId} onWorkoutSaved={() => { fetchHistory(); setSelectedTemplate(null); setActivePage('history'); }} />,
     history: <History workoutHistory={workoutHistory} onDelete={fetchHistory} />,
     templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,

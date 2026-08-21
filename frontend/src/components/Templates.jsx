@@ -21,6 +21,18 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
   const [pendingExercises, setPendingExercises] = useState([]);
   const [error, setError] = useState('');
   
+  const BLOCKED_NUMERIC_KEYS = ['-', '+', 'e', 'E'];
+    const blockInvalidNumericKey = (event) => {
+    if (BLOCKED_NUMERIC_KEYS.includes(event.key)) event.preventDefault();
+  };
+  const sanitizeRepsInput = (value) => value.replace(/[^0-9]/g, '');
+  const sanitizeWeightInput = (value) => {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot === -1) return cleaned;
+    return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  };
+
   // Library filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState('All Muscles');
@@ -127,6 +139,7 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
       muscle_group: ex.muscle_group,
       target_sets: ex.sets.length,
       target_reps: Number(ex.sets[0]?.reps) || 0,
+      target_weight: Number(ex.sets[0]?.weight) || 0.0,
     }));
 
     try {
@@ -254,8 +267,10 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
                         {ex.sets.map((set, idx) => (
                           <div key={set.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
                             <span style={{ width: '40px', color: '#9ca3af', fontWeight: 700 }}>{idx + 1}</span>
-                            <input type="number" placeholder="kg" style={styles.setInput} value={set.weight} onChange={(e) => updateSet(ex.id, set.id, 'weight', e.target.value)} />
-                            <input type="number" placeholder="reps" style={styles.setInput} value={set.reps} onChange={(e) => updateSet(ex.id, set.id, 'reps', e.target.value)} />
+                            <input type="text" inputMode="decimal" placeholder="kg" style={styles.setInput} value={set.weight}
+                              onKeyDown={blockInvalidNumericKey} onChange={(e) => updateSet(ex.id, set.id, 'weight', e.target.value)} />
+                            <input type="text" inputMode="numeric" placeholder="reps" style={styles.setInput} value={set.reps}
+                              onKeyDown={blockInvalidNumericKey} onChange={(e) => updateSet(ex.id, set.id, 'reps', e.target.value)} />
                             <button type="button" onClick={() => removeSet(ex.id, set.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}>✕</button>
                           </div>
                         ))}

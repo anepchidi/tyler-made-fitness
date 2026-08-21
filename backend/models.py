@@ -105,6 +105,7 @@ class TemplateExercise(Base):
     muscle_group = Column(String, nullable=True)
     target_sets = Column(Integer, default=3)
     target_reps = Column(Integer, default=10)
+    target_weight = Column(Float, default=0.0)
 
     template = relationship("WorkoutTemplate", back_populates="exercises")
 

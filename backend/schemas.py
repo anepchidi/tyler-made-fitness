@@ -80,6 +80,11 @@ class Exercise(ExerciseBase):
     class Config:
         from_attributes = True
 
+class LatestExerciseStats(BaseModel):
+    weight: float = Field(default=0.0, ge=0)
+    reps: int = Field(default=0, ge=0)
+    has_history: bool = False
+
 # --- SOCIAL SCHEMAS ---
 class UserFollowCreate(BaseModel):
     target_user_id: int = Field(..., gt=0)
@@ -160,19 +165,38 @@ class PublicWorkoutFeedItem(BaseModel):
     comments_count: int
 
 # --- TEMPLATE SCHEMAS ---
+class TemplateSetBase(BaseModel):
+    target_reps: int = Field(default=10, gt=0, le=1000)
+    target_weight: float = Field(default=0.0, ge=0.0, le=2000.0)
+
+class TemplateSetCreate(TemplateSetBase):
+    set_number: int = Field(default=1, gt=0, le=100)
+
+    class Config:
+        extra = "forbid"
+
+class TemplateSet(TemplateSetBase):
+    id: int
+    template_exercise_id: int
+    set_number: int
+
+    class Config:
+        from_attributes = True
+
 class TemplateExerciseBase(BaseModel):
     exercise_name: str = Field(..., min_length=1, max_length=100)
     muscle_group: Optional[str] = Field(default=None, max_length=50)
-    target_sets: int = Field(default=3, gt=0, le=50)
-    target_reps: int = Field(default=10, gt=0, le=1000)
 
 class TemplateExerciseCreate(TemplateExerciseBase):
+    sets: List[TemplateSetCreate] = Field(..., min_items=1)
+
     class Config:
         extra = "forbid"
 
 class TemplateExercise(TemplateExerciseBase):
     id: int
     template_id: int
+    sets: List[TemplateSet] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
