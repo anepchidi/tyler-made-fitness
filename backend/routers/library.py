@@ -1,4 +1,5 @@
 import os
+import uuid
 import shutil
 from typing import Optional
 
@@ -8,16 +9,29 @@ from sqlalchemy.orm import Session
 
 try:
     import models, schemas
-    from dependencies import get_db
+    from dependencies import get_db, get_current_user
 except ModuleNotFoundError:
     from .. import models, schemas
-    from ..dependencies import get_db
+    from ..dependencies import get_db, get_current_user
 
 router = APIRouter()
 
 UPLOAD_DIR = "static/exercises"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  
+
+def _sniff_image_extension(header: bytes) -> Optional[str]:
+     """Determine file type from magic bytes -- never trust client filename/Content-Type."""
+    if header.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if header.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return ".webp"
+    return None
 
 @router.get("/")
 def read_root():
@@ -100,7 +114,11 @@ async def get_exercise_library(muscle: Optional[str] = None, db: Session = Depen
 
 
 @router.post("/exercises/library")
-def create_library_exercise(exercise: schemas.ExerciseLibrary, db: Session = Depends(get_db)):
+def create_library_exercise(
+    exercise: schemas.ExerciseLibraryCreate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current-user),
+):
     existing = db.query(models.ExerciseLibrary).filter(models.ExerciseLibrary.name == exercise.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Exercise already exists in library")
@@ -122,13 +140,29 @@ async def upload_exercise_with_image(
     muscle_group: str = Form(...),
     image: UploadFile = File(None),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     file_path = None
     if image:
-        file_path = f"{UPLOAD_DIR}/{image.filename}"
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
-        file_path = f"/static/exercises/{image.filename}"
+        contents = await image.read(MAX_UPLOAD_BYTES + 1)
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded image is empty")
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Image exceeds 5MB size limit")
+
+        ext = _sniff_image_extension(contents[:16])
+        if ext is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported image format. Allowed: JPEG, PNG, GIF, WEBP.",
+            )
+
+        safe_filename = f"{uuid.uuid4().hex}{ext}"
+        disk_path = os.path.join(UPLOAD_DIR, safe_filename)
+        with open(disk_path, "wb") as buffer:
+            buffer.write(contents)
+        file_path = f"/static/exercises/{safe_filename}"
+        
 
     new_ex = models.ExerciseLibrary(name=name, muscle_group=muscle_group, image_url=file_path)
     db.add(new_ex)

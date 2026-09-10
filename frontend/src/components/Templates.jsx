@@ -12,6 +12,13 @@ const getImageSrc = (exercise) => {
   return `${API}${exercise.image_url}`;
 };
 
+const sanitizeRepsInput = (value) => value.replace(/[^0-9]/g, '');
+const sanitizeWeightInput = (value) => {
+  const cleaned = value.replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+};
 export default function Templates({ exercises = [], onLoadTemplate }) {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,13 +31,6 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
   const BLOCKED_NUMERIC_KEYS = ['-', '+', 'e', 'E'];
     const blockInvalidNumericKey = (event) => {
     if (BLOCKED_NUMERIC_KEYS.includes(event.key)) event.preventDefault();
-  };
-  const sanitizeRepsInput = (value) => value.replace(/[^0-9]/g, '');
-  const sanitizeWeightInput = (value) => {
-    const cleaned = value.replace(/[^0-9.]/g, '');
-    const firstDot = cleaned.indexOf('.');
-    if (firstDot === -1) return cleaned;
-    return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
   };
 
   // Library filters
@@ -133,13 +133,13 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
 
     setError('');
 
-    // Map the complex inline sets back to the simple backend schema targets
     const formattedExercises = pendingExercises.map(ex => ({
       exercise_name: ex.exercise_name,
       muscle_group: ex.muscle_group,
-      target_sets: ex.sets.length,
-      target_reps: Number(ex.sets[0]?.reps) || 0,
-      target_weight: Number(ex.sets[0]?.weight) || 0.0,
+      sets: ex.sets.map((s) => ({
+        target_reps: s.reps === '' ? null : Number(s.reps),
+        target_weight: s.weight === '' ? null : Number(s.weight),
+      })),
     }));
 
     try {
@@ -303,7 +303,7 @@ export default function Templates({ exercises = [], onLoadTemplate }) {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                       {(template.exercises || []).map((ex, idx) => (
                         <span key={idx} style={{ background: '#ecfdf5', color: '#065f46', padding: '8px 12px', borderRadius: '999px', fontSize: '13px', fontWeight: 700 }}>
-                          {ex.exercise_name} • {ex.target_sets}×{ex.target_reps}
+                          {ex.exercise_name} • {(ex.sets || []).length} set{(ex.sets || []).length === 1 ? '' : 's'}
                         </span>
                       ))}
                     </div>

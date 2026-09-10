@@ -1,7 +1,5 @@
-import os
 from datetime import datetime, timedelta
 
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -10,17 +8,15 @@ from sqlalchemy.orm import Session
 try:
     import models
     from database import SessionLocal
+    from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 except ModuleNotFoundError:
     from . import models
     from .database import SessionLocal
-
-load_dotenv()
-
-SECRET_KEY = os.environ["SECRET_KEY"]
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
 def get_db():
@@ -57,3 +53,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def get_current_user_optional(
+    token: str | None = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+):
+    if not token:
+        return None
+    try:
+        return get_current_user(token=token, db=db)
+    except HTTPException:
+        return None

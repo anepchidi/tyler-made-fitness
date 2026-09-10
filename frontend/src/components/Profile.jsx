@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Award, Scale, Ruler, Calendar, Target, TrendingUp, Flame, Zap, Users } from 'lucide-react';
+import { Scale, Ruler, Calendar, Target, TrendingUp} from 'lucide-react';
 import client from '../api/client';
 
 export default function Profile({ username, userId, workoutHistory = [], showSocialActions = false, viewUserId = null }) {
@@ -15,37 +15,50 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
   const [socialBusy, setSocialBusy] = useState(false);
   const [socialMessage, setSocialMessage] = useState("");
   const [isFollowing, setIsFollowing] = useState(false);
-
+  const targetUserId = viewUserId ?? userId;
+  const isOwnProfile = !viewUserId || viewUserId === userId;
   // Fetch settings from API on component mount
   useEffect(() => {
     if (!userId) return;
+    let cancelled = false;
 
     const loadProfileData = async () => {
-      try {
-        const settingsData = await client.get('/users/me/settings');
-        setUnit(settingsData.weight_unit || "kg");
-        setHeight(settingsData.height_cm ? String(settingsData.height_cm) : "");
-        setBodyweight(settingsData.bodyweight_kg ? String(settingsData.bodyweight_kg) : "");
-        setAge(settingsData.age ? String(settingsData.age) : "");
-        setGoal(settingsData.fitness_goal || "muscle");
+      setLoading(true);
 
+      if (isOwnProfile) {
         try {
-          const profileData = await client.get(`/users/${userId}/profile/public`);
-          setSocialCounts({
-            follower_count: profileData.follower_count || 0,
-            following_count: profileData.following_count || 0,
-            workout_count: profileData.workout_count || 0,
+          const settingsData = await client.get('/users/me/settings');
+          if (!cancelled) {
+            setUnit(settingsData.weight_unit || 'kg');
+            setHeight(settingsData.height_cm != null ? String(settingsData.height_cm) : '');
+            setBodyweight(settingsData.bodyweight_kg != null ? String(settingsData.bodyweight_kg) : '');
+            setAge(settingsData.age != null ? String(settingsData.age) : '');
+            setGoal(settingsData.fitness_goal || 'muscle');
+          }
+        } catch (err) {
+          if (!cancelled) setError(err.message || 'Failed to load settings');
+        }
+      }
+
+      try {
+        const profileData = await client.get(`/users/${targetUserId}/profile/public`);
+        if (cancelled) return;
+        setSocialCounts({
+          follower_count: profileData.follower_count || 0,
+          following_count: profileData.following_count || 0,
+          workout_count: profileData.workout_count || 0,
         });
-       } catch (_) { /* public stats are non-critical */ }
-      } catch (err) {
-        console.error("Failed to load settings:", err);
+        setIsFollowing(Boolean(profileData.is_following));
+      } catch (_) {
+        /* public stats are non-critical */
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadProfileData();
-  }, [userId]);
+    return () => { cancelled = true; };
+  }, [userId, targetUserId, isOwnProfile]);
 
   const save = async () => {
     try {
@@ -75,36 +88,43 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
   // Calculate streak (simplified)
   const today = new Date().toISOString().split('T')[0];
   const hasWorkoutToday = workoutHistory.some(w => w.date === today);
-  const currentStreak = hasWorkoutToday ? 1 : 0; // Simplified - you can enhance this
+  const currentStreak = hasWorkoutToday ? 1 : 0; 
 
   const handleSocialToggle = async () => {
-    if (!userId) return;
-    const targetId = viewUserId ?? userId;
-    if (targetId === userId) {
-      setSocialMessage("You can’t follow yourself here.");
+    if (!userId || isOwnProfile) {
+      setSocialMessage('You can’t follow yourself here.');
       return;
     }
 
+    const wasFollowing = isFollowing;
     setSocialBusy(true);
-    setSocialMessage("");
+    setSocialMessage('');
+
+    setIsFollowing(!wasFollowing);
+    setSocialCounts((prev) => ({
+      ...prev,
+      follower_count: Math.max(0, prev.follower_count + (wasFollowing ? -1 : 1)),
+    }));
+
     try {
-      const path = `/users/${userId}/follow/${targetId}`;
-      isFollowing ? await client.delete(path) : await client.post(path);
-      setIsFollowing((prev) => !prev);
-      setSocialMessage(isFollowing ? 'Unfollowed successfully' : 'Following now');
+      const path = `/users/${userId}/follow/${targetUserId}`;
+      if (wasFollowing) {
+        await client.delete(path);
+      } else {
+        await client.post(path);
+      }
+      setSocialMessage(wasFollowing ? 'Unfollowed successfully' : 'Following now');
     } catch (err) {
+      setIsFollowing(wasFollowing);
+      setSocialCounts((prev) => ({
+        ...prev,
+        follower_count: Math.max(0, prev.follower_count + (wasFollowing ? 1 : -1)),
+      }));
       setSocialMessage(err.message || 'Unable to update follow state');
     } finally {
       setSocialBusy(false);
     }
   };
-
-  const achievements = [
-    { icon: <Zap size={24} color="#10b981" />, label: "First Workout", unlocked: totalWorkouts >= 1, bg: "#ecfdf5" },
-    { icon: <Flame size={24} color="#f59e0b" />, label: "7-Day Streak", unlocked: currentStreak >= 7, bg: "#fef3c7" },
-    { icon: <TrendingUp size={24} color="#3b82f6" />, label: "10 Workouts", unlocked: totalWorkouts >= 10, bg: "#dbeafe" },
-    { icon: <Award size={24} color="#8b5cf6" />, label: "30 Workouts", unlocked: totalWorkouts >= 30, bg: "#ede9fe" }
-  ];
 
   const card = { 
     background:"white", 
@@ -156,18 +176,19 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
                 Member since {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </p>
             </div>
-            {showSocialActions ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                <button
+            {showSocialActions && !isOwnProfile ? (
+               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                 <button
                   onClick={handleSocialToggle}
-                  disabled={socialBusy}
+                  disabled={socialBusy || loading}
                   style={{
                     padding: '10px 14px',
                     borderRadius: '999px',
                     border: '1px solid #10b981',
-                    background: '#ecfdf5',
-                    color: '#059669',
+                    background: isFollowing ? '#ffffff' : '#ecfdf5',
+                    color: isFollowing ? '#065f46' : '#059669',
                     cursor: socialBusy ? 'wait' : 'pointer',
+                    opacity: socialBusy || loading ? 0.6 : 1,
                     fontWeight: 600,
                   }}
                 >
@@ -235,46 +256,6 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
                 This Month
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Achievements */}
-        <div style={card}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-            <Award size={20} color="#111" strokeWidth={2} />
-            <h3 style={{ margin: 0, fontSize: "17px", color: "#111", fontWeight: 700 }}>
-              Achievements
-            </h3>
-          </div>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "12px" }}>
-            {achievements.map((ach, i) => (
-              <div key={i} style={{
-                padding: "16px",
-                borderRadius: "12px",
-                background: ach.unlocked ? ach.bg : "#fafafa",
-                border: `2px solid ${ach.unlocked ? "#10b981" : "#e5e5e5"}`,
-                textAlign: "center",
-                opacity: ach.unlocked ? 1 : 0.4,
-                transition: "all 0.2s",
-                cursor: ach.unlocked ? "pointer" : "default"
-              }}
-              onMouseEnter={e => {
-                if (ach.unlocked) {
-                  e.currentTarget.style.transform = "translateY(-4px)";
-                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
-                }
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "none";
-              }}>
-                <div style={{ marginBottom: "8px", display: "flex", justifyContent: "center" }}>
-                  {ach.icon}
-                </div>
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "#111" }}>{ach.label}</div>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -442,6 +423,10 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
             </div>
           </div>
         </div>
+
+        {error ? (
+          <div style={{ marginBottom: '12px', color: '#b91c1c', fontSize: '14px' }}>{error}</div>
+        ) : null}
 
         {/* Save Button */}
         <button 

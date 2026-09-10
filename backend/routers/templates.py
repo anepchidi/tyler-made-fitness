@@ -70,6 +70,33 @@ def create_user_template(
     _ensure_user_access(user_id, current_user)
     return create_template_for_user(user_id, template, db)
 
+@router.put("/users/me/templates/{template_id}", response_model=schemas.WorkoutTemplate)
+def update_my_template(template_id: int, template: schemas.WorkoutTemplateCreate,
+                        db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    return update_template_for_user(current_user.id, template_id, template, db)
+
+@router.put("/users/{user_id}/templates/{template_id}", response_model=schemas.WorkoutTemplate)
+def update_user_template(user_id: int, template_id: int, template: schemas.WorkoutTemplateCreate,
+                          db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    _ensure_user_access(user_id, current_user)
+    return update_template_for_user(user_id, template_id, template, db)
+
+def update_template_for_user(user_id, template_id, template, db):
+    db_template = db.query(models.WorkoutTemplate).filter(models.WorkoutTemplate.id == template_id).first()
+    if not db_template or db_template.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db_template.name = template.name
+    db_template.description = template.description
+    db.query(models.TemplateExercise).filter(models.TemplateExercise.template_id == db_template.id).delete()
+    for exercise_data in template.exercises or []:
+        db.add(models.TemplateExercise(
+            template_id=db_template.id, exercise_name=exercise_data.exercise_name,
+            muscle_group=exercise_data.muscle_group, sets=[s.model_dump() for s in exercise_data.sets],
+        ))
+    db.commit()
+    db.refresh(db_template)
+    return db.query(models.WorkoutTemplate).options(joinedload(models.WorkoutTemplate.exercises)) \
+        .filter(models.WorkoutTemplate.id == db_template.id).first()
 
 @router.delete("/users/me/templates/{template_id}")
 def delete_my_template(
@@ -144,9 +171,7 @@ def create_template_for_user(user_id: int, template: schemas.WorkoutTemplateCrea
             template_id=db_template.id,
             exercise_name=exercise_data.exercise_name,
             muscle_group=exercise_data.muscle_group,
-            target_sets=exercise_data.target_sets,
-            target_reps=exercise_data.target_reps,
-            target_weight=getattr(exercise_data, "target_weight", 0.0),
+            sets=[s.model_dump() for s in exercise_data.sets]
         )
         db.add(db_exercise)
 

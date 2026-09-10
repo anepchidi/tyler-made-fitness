@@ -15,9 +15,10 @@ class WeightUnit(str, Enum):
     KG = "kg"
     LBS = "lbs"
  
-class Visibility(str, Enum):
+class WorkoutVisibility(str, Enum):
     PUBLIC = "public"
     PRIVATE = "private"
+    FOLLOWERS = "followers"
 
 class ProgressGranularity(str, Enum):
     DAY = "day"
@@ -104,7 +105,7 @@ class UserFollowResponse(BaseModel):
         from_attributes = True
 
 class WorkoutShareCreate(BaseModel):
-    visibility: Visibility = Visibility.PUBLIC
+    visibility: WorkoutVisibility = WorkoutVisibility.PRIVATE
  
     class Config:
         extra = "forbid"
@@ -112,7 +113,7 @@ class WorkoutShareCreate(BaseModel):
 class WorkoutShareResponse(BaseModel):
     id: int
     workout_id: int
-    visibility: str
+    visibility: WorkoutVisibility
     created_at: datetime
 
     class Config:
@@ -123,6 +124,14 @@ class WorkoutCommentCreate(BaseModel):
 
     class Config:
         extra = "forbid"
+
+    @field_validator("content")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("content must not be blank")
+        return v
 
 class WorkoutCommentResponse(BaseModel):
     id: int
@@ -136,10 +145,13 @@ class WorkoutCommentResponse(BaseModel):
         from_attributes = True
 
 class PublicUserProfile(BaseModel):
+    id: int
     username: str
     workout_count: int
     follower_count: int
     following_count: int
+    is_following: bool = False
+    is_self: bool = False
 
 class ExerciseSetSummary(BaseModel):
     id: int
@@ -164,31 +176,38 @@ class PublicWorkoutFeedItem(BaseModel):
     exercises: List[ExerciseSummary] = Field(default_factory=list)
     comments_count: int
 
+class WorkoutFeedPage(BaseModel):
+    items: List[PublicWorkoutFeedItem] = Field(default_factory=list)
+    total: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=50)
+    offset: int = Field(default=0, ge=0)
+    has_more: bool = False
+
+class DiscoverUser(BaseModel):
+    id: int
+    username: str
+    workout_count: int = Field(default=0, ge=0)
+    follower_count: int = Field(default=0, ge=0)
+    is_following: bool = False
+
 # --- TEMPLATE SCHEMAS ---
 class TemplateSetBase(BaseModel):
-    target_reps: int = Field(default=10, gt=0, le=1000)
-    target_weight: float = Field(default=0.0, ge=0.0, le=2000.0)
+    target_reps: Optional[int] = Field(default=None, gt=0, le=1000)
+    target_weight: Optional[int] = Field(default=None, gt=0.0, le=2000.0)
+    
+    class Config:
+        extra="forbid"
 
 class TemplateSetCreate(TemplateSetBase):
-    set_number: int = Field(default=1, gt=0, le=100)
-
     class Config:
         extra = "forbid"
-
-class TemplateSet(TemplateSetBase):
-    id: int
-    template_exercise_id: int
-    set_number: int
-
-    class Config:
-        from_attributes = True
 
 class TemplateExerciseBase(BaseModel):
     exercise_name: str = Field(..., min_length=1, max_length=100)
     muscle_group: Optional[str] = Field(default=None, max_length=50)
 
 class TemplateExerciseCreate(TemplateExerciseBase):
-    sets: List[TemplateSetCreate] = Field(..., min_items=1)
+    sets: List[TemplateSetBase] = Field(default_factory=list)
 
     class Config:
         extra = "forbid"
@@ -196,7 +215,7 @@ class TemplateExerciseCreate(TemplateExerciseBase):
 class TemplateExercise(TemplateExerciseBase):
     id: int
     template_id: int
-    sets: List[TemplateSet] = Field(default_factory=list)
+    sets: List[TemplateSetBase] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

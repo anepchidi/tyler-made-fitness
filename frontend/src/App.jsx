@@ -22,7 +22,7 @@ export default function App() {
   const [exercises, setExercises] = useState([]);
   const [isLoadingExercises, setIsLoadingExercises] = useState(true);
   const [workoutHistory, setWorkoutHistory] = useState([]);
-
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
 
   useEffect(() => {
     const loadExercises = async () => {
@@ -90,26 +90,6 @@ export default function App() {
   const handleLoadTemplate = (template) => {
     setSelectedTemplate(template);
     setActivePage('workout');
-    const cartItems = (template.exercises || [])
-      .map((exercise, index) => {
-        const name = typeof exercise === 'string'
-          ? exercise
-          : exercise.exercise_name || exercise.name || '';
-
-        if (!name) return null;
-
-        return {
-          name,
-          muscle_group: exercise.muscle_group || '',
-          lastWeight: 0,
-          lastReps: exercise.target_reps || 0,
-          sets: [{ weight: 0, reps: exercise.target_reps || 0, id: Date.now() + index }],
-        };
-      })
-      .filter(Boolean);
-
-    localStorage.setItem('activeCart', JSON.stringify(cartItems));
-    setActivePage('workout');
   };
 
   if (!token) return <AuthPage onLogin={handleLogin} />;
@@ -123,7 +103,7 @@ export default function App() {
         isLoadingExercises={isLoadingExercises}
       />
     ),
-    workout: <WorkoutLogger userId={userId} onWorkoutSaved={() => { fetchHistory(); setSelectedTemplate(null); setActivePage('history'); }} />,
+    workout: <WorkoutLogger userId={userId} template={selectedTemplate} onWorkoutSaved={() => { fetchHistory(); setSelectedTemplate(null); setActivePage('history'); }} />,
     history: <History workoutHistory={workoutHistory} onDelete={fetchHistory} />,
     templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,

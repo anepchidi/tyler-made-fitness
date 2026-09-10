@@ -164,7 +164,7 @@ async def get_food_details(food_id: str, current_user: models.User = Depends(get
  
         async with httpx.AsyncClient() as client:
             res = await client.get(
-                "https://platform.fatsecret.com/rest/server.api",
+                "https://platform.fatsecret.com/rest/server.api", 
                 params={
                     "method": "food.get.v2",
                     "food_id": food_id,

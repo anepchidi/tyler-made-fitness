@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, Float, DateTime, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, Float, DateTime, Text, UniqueConstraint, JSON 
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -64,7 +64,7 @@ class WorkoutShare(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workout_id = Column(Integer, ForeignKey("workouts.id"), unique=True, nullable=False)
-    visibility = Column(String, default="public")
+    visibility = Column(String, default="private", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     workout = relationship("Workout", back_populates="share")
@@ -103,9 +103,7 @@ class TemplateExercise(Base):
     template_id = Column(Integer, ForeignKey("workout_templates.id"))
     exercise_name = Column(String, nullable=False)
     muscle_group = Column(String, nullable=True)
-    target_sets = Column(Integer, default=3)
-    target_reps = Column(Integer, default=10)
-    target_weight = Column(Float, default=0.0)
+    sets = Column(JSON, default=list)  # [{ "target_reps": int|None, "target_weight": float|None }, ...]
 
     template = relationship("WorkoutTemplate", back_populates="exercises")
 

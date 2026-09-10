@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import client from '../api/client';
-import { Zap, FileText, Plus } from 'lucide-react';
+import { Zap, Plus, Globe, Lock, Users } from 'lucide-react';
 
-const clampInt = (value, min, max, fallback) => {
-  const n = parseInt(value, 10);
-  if (!Number.isFinite(n) || n < min) return fallback;
-  return Math.min(n, max);
+const sanitizeRepsInput = (value) => value.replace(/[^0-9]/g, '');
+const sanitizeWeightInput = (value) => {
+  const cleaned = value.replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
 };
+
+const VISIBILITY_OPTIONS = [
+  { id: 'private', label: 'Private', icon: Lock },
+  { id: 'followers', label: 'Followers', icon: Users },
+  { id: 'public', label: 'Public', icon: Globe },
+];
 
 export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
   const [cart, setCart] = useState(() => {
@@ -21,7 +29,10 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
   const [isActive, setIsActive] = useState(() => localStorage.getItem('isWorkoutActive') === 'true');
   const [seconds, setSeconds] = useState(() => parseInt(localStorage.getItem('activeSeconds'), 10) || 0);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [visibility, setVisibility] = useState(
+    () => localStorage.getItem('activeVisibility') || 'private',
+  );
 
   const fmt = (s) => `${Math.floor(s / 60)
     .toString()
@@ -38,35 +49,47 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
   useEffect(() => {
     localStorage.setItem('activeCart', JSON.stringify(cart));
     localStorage.setItem('activeSeconds', seconds.toString());
-    localStorage.setItem('isWorkoutActive', isActive.toString());
-  }, [cart, seconds, isActive]);
+    localStorage.setItem('activeVisibility', visibility);
+  }, [cart, seconds, isActive, visibility]);
 
   useEffect(() => {
     if (!template) return;
     let cancelled = false;
     const buildCartFromTemplate = async () => {
       setTemplateLoading(true);
+      setError('');
       const templateExercises = Array.isArray(template.exercises) ? template.exercises : [];
-      const built = await Promise.all(templateExercises.map(async (te) => {
-        const safeSetCount = clampInt(te?.target_sets, 1, 20, 1);   // fallback: 1 set
-        const safeReps = clampInt(te?.target_reps, 1, 100, 10);     // fallback: 10 reps
-        let lastWeight = '', lastReps = '';
         try {
-          const latest = await client.get(`/users/me/exercises/${encodeURIComponent(te?.exercise_name || '')}/latest`);
-          if (latest?.has_history) {
-            lastWeight = latest.weight != null ? String(latest.weight) : '';
-            lastReps = latest.reps != null ? String(latest.reps) : '';
-          }
-        } catch { /* no history — leave blank placeholders */ }
-        return {
-          name: te?.exercise_name || 'Exercise',
-          muscle_group: te?.muscle_group || 'General',
-          sets: Array.from({ length: safeSetCount }, () => ({
-            id: Date.now() + Math.random(), weight: lastWeight, reps: lastReps || String(safeReps),
-          })),
-        };
-      }));
-      if (!cancelled) { setCart(built); setIsActive(false); setSeconds(0); setTemplateLoading(false); }
+          const built = await Promise.all(templateExercises.map(async (te) => {
+            let lastWeight = '', lastReps = '';
+            try {
+              const latest = await client.get(`/users/me/exercises/${encodeURIComponent(te?.exercise_name || '')}/latest`);
+              if (latest?.has_history) {
+                lastWeight = latest.weight != null ? String(latest.weight) : '';
+                lastReps = latest.reps != null ? String(latest.reps) : '';
+               }
+            } catch { /* no history — leave blank placeholders */ }
+
+            const setsToMap = Array.isArray(te?.sets) && te.sets.length > 0
+              ? te.sets
+              : [{ target_reps: null, target_weight: null }]; // fallback: one blank set
+
+            return {
+              name: te?.exercise_name || 'Exercise',
+              muscle_group: te?.muscle_group || 'General',
+              sets: setsToMap.map((s) => ({
+                id: `${Date.now()}-${Math.random()}`,
+                weight: s.target_weight != null ? String(s.target_weight) : lastWeight,
+                reps: s.target_reps != null ? String(s.target_reps) : lastReps,
+              })),
+            };
+          }));
+          if (!cancelled) { setCart(built); setIsActive(false); setSeconds(0); }
+        } catch (err) {
+          if (!cancelled) setError(err.message || 'Failed to load routine into the logger.');
+        } finally {
+          if (!cancelled) setTemplateLoading(false);
+        }
     };
     buildCartFromTemplate();
     return () => { cancelled = true; };
@@ -74,19 +97,24 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
 
   const addSet = (name) =>
     setCart((prev) =>
-      prev.map((ex) =>
-        ex.name !== name
-          ? ex
-          : {
-              ...ex,
-              sets: [...ex.sets, { ...ex.sets[ex.sets.length - 1], id: Date.now() }],
+      prev.map((ex) => {
+        if (ex.name !== name) return ex;
+        const lastSet = ex.sets[ex.sets.length - 1];
+        return {
+          ...ex,
+          sets: [
+            ...ex.sets,
+            {
+              id: `${Date.now()}-${Math.random()}`,
+              weight: lastSet ? lastSet.weight : '',
+              reps: lastSet ? lastSet.reps : '',
             },
-      ),
+          ],
+        };
+      })
     );
-
-  const val = field === 'reps' ? sanitizeRepsInput(rawVal) : sanitizeWeightInput(rawVal);
   
-  const updateSet = (name, setId, field, val) =>
+  const updateSet = (name, setId, field, val) =>{
     setCart((prev) =>
       prev.map((ex) =>
         ex.name !== name
@@ -97,7 +125,7 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
             },
       ),
     );
-
+  };
   const removeExercise = (name) => setCart((prev) => prev.filter((ex) => ex.name !== name));
 
   const removeSet = (name, setId) =>
@@ -140,12 +168,20 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
       });
       }
 
+      try {
+        await client.post(`/workouts/${workoutId}/share`, { visibility });
+      } catch (shareErr) {
+        console.error('Workout saved but visibility could not be applied', shareErr);
+        setError('Workout saved, but the sharing setting could not be applied. You can change it from your history.');
+      }
+
       setCart([]);
       setIsActive(false);
       setSeconds(0);
       localStorage.removeItem('activeCart');
       localStorage.removeItem('activeSeconds');
-      localStorage.removeItem('isWorkoutActive');
+      localStorage.removeItem('activeVisibility');
+      setVisibility('private');
 
       onWorkoutSaved();
     } catch (err) {
@@ -215,7 +251,9 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
             </div>
           )}
 
-          {cart.length === 0 ? (
+          {templateLoading ? (
+            <div style={{ textAlign: 'center', color: '#6b7280', padding: '40px 24px', fontSize: '16px' }}>Loading routine…</div>
+          ) : cart.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#6b7280', padding: '80px 24px', borderRadius: '16px', background: 'white', border: '1px dashed #e5e7eb' }}>
               <div style={{ marginBottom: '18px', display: 'inline-flex', width: '72px', height: '72px', borderRadius: '18px', background: '#ecfdf5', alignItems: 'center', justifyContent: 'center' }}>
                 <Plus size={36} color="#10b981" />
@@ -263,13 +301,15 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
                       <div key={set.id} style={{ display: 'flex', alignItems: 'center', gap: '18px', padding: '10px 0' }}>
                         <span style={{ width: '20px', color: '#9ca3af', fontWeight: 700 }}>{idx + 1}</span>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           style={inputStyle}
                           value={set.weight}
                           onChange={(event) => updateSet(ex.name, set.id, 'weight', event.target.value)}
                         />
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           style={inputStyle}
                           value={set.reps}
                           onChange={(event) => updateSet(ex.name, set.id, 'reps', event.target.value)}
@@ -310,6 +350,42 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
                   </div>
                 </div>
               ))}
+              <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e5e5e5', padding: '18px 22px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
+                  Who can see this workout
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {VISIBILITY_OPTIONS.map(({ id, label, icon: Icon }) => {
+                    const selected = visibility === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setVisibility(id)}
+                        disabled={saving}
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '12px',
+                          borderRadius: '12px',
+                          border: `2px solid ${selected ? '#10b981' : '#e5e5e5'}`,
+                          background: selected ? '#ecfdf5' : '#fafafa',
+                          color: selected ? '#059669' : '#6b7280',
+                          fontWeight: 600,
+                          fontSize: '14px',
+                          cursor: saving ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <Icon size={16} />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={isActive ? saveWorkout : () => setIsActive(true)}

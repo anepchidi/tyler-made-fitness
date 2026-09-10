@@ -16,6 +16,7 @@ import {
   Plus,
   ImageIcon,
   ChevronDown,
+  TrendingUp,
 } from 'lucide-react';
 import client, { API } from '../api/client';
 
