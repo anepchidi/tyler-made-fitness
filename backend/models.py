@@ -10,7 +10,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    is_active = Column(Integer, default=1)
+    is_active = Column(Integer, default=1, server_default="1", nullable=False)
     
     # Link to workouts (One-to-Many)
     workouts = relationship("Workout", back_populates="owner")

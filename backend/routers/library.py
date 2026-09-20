@@ -22,7 +22,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  
 
 def _sniff_image_extension(header: bytes) -> Optional[str]:
-     """Determine file type from magic bytes -- never trust client filename/Content-Type."""
+    """Determine file type from magic bytes -- never trust client filename/Content-Type."""
     if header.startswith(b"\xff\xd8\xff"):
         return ".jpg"
     if header.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -117,7 +117,7 @@ async def get_exercise_library(muscle: Optional[str] = None, db: Session = Depen
 def create_library_exercise(
     exercise: schemas.ExerciseLibraryCreate, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current-user),
+    current_user: models.User = Depends(get_current_user),
 ):
     existing = db.query(models.ExerciseLibrary).filter(models.ExerciseLibrary.name == exercise.name).first()
     if existing:

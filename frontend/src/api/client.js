@@ -3,6 +3,7 @@ export const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'workoutToken';
 
 const STATUS_MESSAGES = {
+  400: 'Bad request. Please check your submission.',
   401: 'Your session has expired. Please sign in again.',
   403: "You don't have permission to do that.",
   422: 'The data you submitted is invalid.',
@@ -73,7 +74,10 @@ async function request(path, options = {}) {
     throw new ApiError('Network error: unable to reach the server.', 0, null);
   }
 
-  if (response.status === 401) {
+  if (
+    response.status === 401 ||
+    (response.status === 400 && data?.detail === 'Inactive user')
+  ) {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }

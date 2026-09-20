@@ -33,13 +33,14 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = _int_env("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
 
 # --- CORS ---
+_raw_origins = _require_env("ALLOWED_ORIGINS")
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",")
-    if origin.strip()
+    for origin in _raw_origins.split(",") if origin.strip()
 ]
+if not ALLOWED_ORIGINS:
+    raise RuntimeError(
+    )
 
 # --- File Upload ---
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/exercises")

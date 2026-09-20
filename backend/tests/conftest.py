@@ -3,10 +3,13 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:5173")
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(BACKEND_ROOT))
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 import pytest
 from fastapi.testclient import TestClient

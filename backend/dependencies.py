@@ -18,6 +18,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
+INACTIVE_USER_DETAIL = "Inactive user"
+
 
 def get_db():
     db = SessionLocal()
@@ -52,6 +54,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(models.User).filter(models.User.username == username).first()
     if user is None:
         raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=INACTIVE_USER_DETAIL,
+        )
     return user
 
 def get_current_user_optional(
@@ -61,6 +69,10 @@ def get_current_user_optional(
     if not token:
         return None
     try:
-        return get_current_user(token=token, db=db)
+        user = get_current_user(token=token, db=db)
     except HTTPException:
         return None
+
+    if user is None or not user.is_active:
+        return None
+    return user
