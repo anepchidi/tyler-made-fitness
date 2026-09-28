@@ -39,6 +39,7 @@ export default function Nutrition({ userId }) {
       })
       .catch(err => {
         console.error("Failed to load nutrition entries:", err);
+        setError("Failed to load nutrition data. Please try again.");
         setLoading(false);
       });
   }, [userId]);
@@ -74,6 +75,29 @@ export default function Nutrition({ userId }) {
     // Cleanup function to clear the timeout if user is still typing
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
+
+  // Loading state: avoid rendering stale/incomplete content while the initial fetch is in flight
+  if (loading) {
+    return (
+      <div style={{ flex:1, padding:"32px", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{`@keyframes nutrition-spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ textAlign: "center" }}>
+          <div style={{
+            width: "48px",
+            height: "48px",
+            margin: "0 auto 16px",
+            borderRadius: "50%",
+            border: "4px solid #e5e7eb",
+            borderTopColor: "#059669",
+            animation: "nutrition-spin 0.8s linear infinite"
+          }} />
+          <p style={{ color: "#666", fontSize: "15px", fontWeight: 600, margin: 0 }}>
+            Loading your nutrition data...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // 4. Remove Entry
   const remove = async (id) => {
@@ -281,6 +305,36 @@ export default function Nutrition({ userId }) {
         </button>
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div style={{
+          ...card,
+          marginBottom: "24px",
+          background: "#fef2f2",
+          borderColor: "#fecaca",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "12px"
+        }}>
+          <span style={{ color: "#991b1b", fontSize: "14px", fontWeight: 600 }}>{error}</span>
+          <button
+            onClick={() => setError("")}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#991b1b",
+              padding: "4px",
+              display: "flex"
+            }}
+            aria-label="Dismiss error"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Goals Editor */}
       {editingGoals && (
         <div style={{ ...card, marginBottom: "24px", background: "#fef3c7", borderColor: "#fcd34d" }}>
@@ -388,6 +442,17 @@ export default function Nutrition({ userId }) {
 
       {/* Overview - Meal breakdown */}
       {view === "overview" && (
+        entries.length === 0 ? (
+          <div style={{ ...card, textAlign: "center", padding: "48px 24px" }}>
+            <Utensils size={40} color="#d1d5db" style={{ marginBottom: "16px" }} />
+            <h3 style={{ margin: "0 0 8px", fontSize: "18px", color: "#111" }}>
+              No nutrition data available
+            </h3>
+            <p style={{ margin: 0, color: "#666", fontSize: "14px" }}>
+              Nothing logged for today yet. Use the "Add Food" or "Custom Food" tab to get started.
+            </p>
+          </div>
+        ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {Object.entries(mealGroups).map(([mealName, items]) => {
             const Icon = mealIcons[mealName];
@@ -463,6 +528,7 @@ export default function Nutrition({ userId }) {
             );
           })}
         </div>
+        )
       )}
 
       {/* Add Food */}
