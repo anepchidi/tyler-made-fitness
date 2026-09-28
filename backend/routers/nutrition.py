@@ -16,8 +16,6 @@ except ModuleNotFoundError:
 
 router = APIRouter()
 
-FS_CLIENT_ID = os.getenv("FS_CLIENT_ID")
-FS_CLIENT_SECRET = os.getenv("FS_CLIENT_SECRET")
 fs_access_token = {"token": None, "expires": 0}
 
 
@@ -25,16 +23,23 @@ async def get_fs_token():
     if fs_access_token["token"] and time.time() < fs_access_token["expires"] - 60:
         return fs_access_token["token"]
 
+    client_id = os.getenv("FS_CLIENT_ID")
+    client_secret = os.getenv("FS_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        print("FatSecret credentials missing: FS_CLIENT_ID / FS_CLIENT_SECRET not loaded")
+        raise HTTPException(status_code=500, detail="FatSecret credentials not configured")
+
     try:
         async with httpx.AsyncClient() as client:
             res = await client.post(
                 "https://oauth.fatsecret.com/connect/token",
-                auth=(FS_CLIENT_ID, FS_CLIENT_SECRET),
+                auth=(client_id, client_secret),
                 data={"grant_type": "client_credentials", "scope": "basic"},
                 timeout=10.0,
             )
  
         if res.status_code != 200:
+            print(f"FatSecret token error {res.status_code}: {res.text}")
             raise HTTPException(status_code=502, detail="FatSecret authentication failed")
  
         data = res.json()
@@ -139,7 +144,13 @@ async def search_foods(query: str, current_user: models.User = Depends(get_curre
         if res.status_code != 200:
             raise HTTPException(status_code=502, detail="FatSecret API unavailable")
  
-        return res.json()
+        data = res.json()
+
+        if "error" in data:
+            print(f"FatSecret API error: {data['error']}")
+            raise HTTPException(status_code=502, detail=data["error"].get("message", "FatSecret API error"))
+
+        return data
  
     except HTTPException:
         raise
@@ -157,7 +168,7 @@ async def search_foods(query: str, current_user: models.User = Depends(get_curre
         raise HTTPException(status_code=500, detail="Error searching food database")
 
 
-@router.get("/nutrition/food/{food_id}")
+@router.get("/nutrition/food/{food_id}", response_model=schemas.FatSecretFoodDetailResponse)
 async def get_food_details(food_id: str, current_user: models.User = Depends(get_current_user)):
     try:
         token = await get_fs_token()
@@ -184,10 +195,12 @@ async def get_food_details(food_id: str, current_user: models.User = Depends(get
  
         food = data["food"]
         servings_data = food.get("servings", {})
-        if not servings_data:
+        serving_list = servings_data.get("serving") if isinstance(servings_data, dict) else None
+
+        if not serving_list:
             raise HTTPException(status_code=400, detail="No serving information available")
  
-        serving = servings_data[0] if isinstance(servings_data, list) else servings_data
+        serving = serving_list[0] if isinstance(serving_list, list) else serving_list
  
         return {
             "food": {

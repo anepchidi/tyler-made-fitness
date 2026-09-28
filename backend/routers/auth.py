@@ -8,7 +8,7 @@ try:
     from dependencies import INACTIVE_USER_DETAIL, create_access_token, get_db
 except ModuleNotFoundError:
     from .. import models, schemas
-    from ..dependencies import create_access_token, get_db
+    from ..dependencies import INACTIVE_USER_DETAIL, create_access_token, get_db
 
 router = APIRouter()
 

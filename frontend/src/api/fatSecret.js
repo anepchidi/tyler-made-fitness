@@ -15,10 +15,10 @@ export const getFoodDetails = async (foodId) => {
 
   if (!food) return null;
   
-  // Extract the first serving
-  const s = Array.isArray(food.servings.serving) 
-    ? food.servings.serving[0] 
-    : food.servings.serving;
+  const rawServing = food.servings?.serving;
+  if (!rawServing) return null;
+
+  const s = Array.isArray(rawServing) ? rawServing[0] : rawServing;
 
   return {
     name: food.food_name,

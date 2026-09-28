@@ -1,6 +1,7 @@
 export const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const TOKEN_KEY = 'workoutToken';
+const AUTH_PATHS = ['/token', '/register'];
 
 const STATUS_MESSAGES = {
   400: 'Bad request. Please check your submission.',
@@ -70,23 +71,30 @@ async function request(path, options = {}) {
   let response;
   try {
     response = await fetch(url, { ...options, headers, body });
-  } catch (err) {
+  } catch {
     throw new ApiError('Network error: unable to reach the server.', 0, null);
   }
 
+  const data = await parseResponseBody(response);
+
+  const isAuthRoute = AUTH_PATHS.includes(path);
+
   if (
-    response.status === 401 ||
-    (response.status === 400 && data?.detail === 'Inactive user')
+    !isAuthRoute &&
+    (response.status === 401 ||
+      (response.status === 400 && data?.detail === 'Inactive user'))
   ) {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }
 
-  const data = await parseResponseBody(response);
-
   if (!response.ok) {
+    const detail = data && typeof data === 'object' ? data.detail : null;
+    const detailMessage = Array.isArray(detail)
+      ? detail.map((d) => d?.msg).filter(Boolean).join('; ')
+      : typeof detail === 'string' ? detail : null;
     const message =
-      (data && typeof data === 'object' && data.detail) ||
+      detailMessage ||
       STATUS_MESSAGES[response.status] ||
       `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status, data);

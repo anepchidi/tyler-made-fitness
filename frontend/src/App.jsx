@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import client from './api/client';
 import AuthPage from './components/AuthPage';
 import Sidebar from './components/Sidebar';
@@ -11,13 +11,34 @@ import Nutrition from './components/Nutrition';
 import Profile from './components/Profile';
 import SocialFeed from './components/SocialFeed';
 
+function readTokenClaims(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(atob(payload));
+    const id = Number(claims?.id);
+    return {
+      id: Number.isFinite(id) && id > 0 ? id : null,
+      username: typeof claims?.sub === 'string' ? claims.sub : '',
+    };
+  } catch {
+    return { id: null, username: '' };
+  }
+}
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('workoutToken'));
   const [userId, setUserId] = useState(() => {
-    const id = localStorage.getItem('userId');
-    return id ? parseInt(id, 10) : null;
+    const stored = parseInt(localStorage.getItem('userId'), 10);
+      if (Number.isFinite(stored) && stored > 0) return stored;
+      const storedToken = localStorage.getItem('workoutToken');
+      const fromToken = storedToken ? readTokenClaims(storedToken).id : null;
+      if (fromToken) localStorage.setItem('userId', String(fromToken));
+      return fromToken;
   });
-  const [username, setUsername] = useState(localStorage.getItem('username') || '');
+  const [username, setUsername] = useState(() => {
+    const storedToken = localStorage.getItem('workoutToken');
+    return localStorage.getItem('username') || (storedToken ? readTokenClaims(storedToken).username : '');
+  });  
   const [activePage, setActivePage] = useState('dashboard');
   const [exercises, setExercises] = useState([]);
   const [isLoadingExercises, setIsLoadingExercises] = useState(true);
@@ -42,50 +63,56 @@ export default function App() {
     loadExercises();
   }, []);
 
-  useEffect(() => {
-    if (userId) {
-      fetchHistory();
-    }
-  }, [userId]);
-
-  const fetchHistory = async () => {
-    if (!userId) return;
-    try {
-      const data = await client.get('/users/me/workouts/');
-      if (Array.isArray(data)) {
-        setWorkoutHistory(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
-      }
-    } catch (err) {
-      console.error('Unable to fetch workout history', err);
-    }
-  };
-
-  const handleLogin = (access_token, user_id, uname) => {
-    localStorage.setItem('workoutToken', access_token);
-    localStorage.setItem('userId', user_id);
-    if (uname) {
-      localStorage.setItem('username', uname);
-    }
-    setToken(access_token);
-    setUserId(parseInt(user_id, 10));
-    setUsername(uname || '');
-    setActivePage('dashboard');
-  };
-
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.clear();
     setToken(null);
     setUserId(null);
     setUsername('');
     setWorkoutHistory([]);
     setActivePage('dashboard');
+  }, []);
+
+   const handleLogin = (access_token, user_id, uname) => {
+    const parsedId = parseInt(user_id, 10);
+    localStorage.setItem('workoutToken', access_token);
+    if (Number.isFinite(parsedId) && parsedId > 0) {
+      localStorage.setItem('userId', String(parsedId));
+    } else {
+      localStorage.removeItem('userId');
+    }
+    if (uname) {
+      localStorage.setItem('username', uname);
+    }
+    setToken(access_token);
+    setUserId(Number.isFinite(parsedId) && parsedId > 0 ? parsedId : null);
+    setUsername(uname || '');
+    setActivePage('dashboard');
   };
 
+  const fetchHistory = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const data = await client.get('/users/me/workouts/');
+      if (Array.isArray(data)) {
+        setWorkoutHistory([...data].sort((a, b) => new Date(b.date) - new Date(a.date)));
+      }
+    } catch (err) {
+      console.error('Unable to fetch workout history', err);
+    }
+  }, [userId]);
+
   useEffect(() => {
-    const onUnauthorized = () => handleLogout();
-    window.addEventListener('auth:unauthorized', onUnauthorized);
-    return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
-  }, []);
+    fetchHistory();
+  }, [fetchHistory]);
+
+  useEffect(() => {
+    window.addEventListener('auth:unauthorized', handleLogout);
+    return () => window.removeEventListener('auth:unauthorized', handleLogout);
+  }, [handleLogout]);
+
+  useEffect(() => {
+    if (token && !userId) handleLogout();
+  }, [token, userId, handleLogout]);
 
   const handleLoadTemplate = (template) => {
     setSelectedTemplate(template);
@@ -107,7 +134,7 @@ export default function App() {
     history: <History workoutHistory={workoutHistory} onDelete={fetchHistory} />,
     templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,
-    social: <SocialFeed />,
+    social: <SocialFeed currentUserId={userId} />,
     profile: <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
   };
 

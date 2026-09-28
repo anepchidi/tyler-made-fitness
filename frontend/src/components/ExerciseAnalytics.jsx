@@ -98,7 +98,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
 
     const loadStats = async () => {
       try {
-        const payload = await client.get(`/users/me/stats`);
+        const payload = await client.get('/users/me/stats');
         if (cancelled) return;
         setStats(payload || null);
         setStatsError('');
@@ -115,8 +115,10 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
     };
     }, []);
 
+  const selectedName = selectedExercise?.name;
+
   useEffect(() => {
-    if (!selectedExercise?.name) {
+    if (!selectedName) {
       setStrengthData([]);
       setVolumeData([]);
       setError('');
@@ -124,7 +126,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
     }
 
     let cancelled = false;
-    const exerciseName = selectedExercise.name;
+    const exerciseName = selectedName;
 
     const loadExerciseDetails = async () => {
       setLoadingProgress(true);
@@ -173,7 +175,7 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
     return () => {
       cancelled = true;
     };
-  }, [selectedExercise?.name]);
+  }, [selectedName]);
 
   const filteredExercises = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -624,7 +626,19 @@ export default function ExerciseAnalytics({ exercises = [], setExercises, isLoad
       color: '#6b7280',
       fontSize: '14px',
     },
+    emptyChartBanner: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px',
+      height: '320px',
+      textAlign: 'center',
+    },
+    emptyChartTitle: { margin: 0, fontSize: '15px', fontWeight: 700, color: '#374151' },
+    emptyChartSubtitle: { margin: 0, fontSize: '13px', color: '#6b7280' },
   };
+   
 
   return (
     <div style={styles.page}>

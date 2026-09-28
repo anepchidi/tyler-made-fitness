@@ -23,6 +23,10 @@ export default function SocialFeed({ currentUserId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const viewerId = Number.isFinite(Number(currentUserId)) && currentUserId != null
+    ? Number(currentUserId)
+    : null;
+
   useEffect(() => {
     loadFeed(0);
   }, []);
@@ -64,12 +68,12 @@ export default function SocialFeed({ currentUserId }) {
   };
 
   const toggleFollow = async (target) => {
-    if (!currentUserId || followBusy[target.id]) return;
+    if (!viewerId || Number(target.id) === viewerId || followBusy[target.id]) return;
     setFollowBusy((prev) => ({ ...prev, [target.id]: true }));
     const wasFollowing = Boolean(target.is_following);
 
     try {
-      const path = `/users/${currentUserId}/follow/${target.id}`;
+      const path = `/users/${viewerId}/follow/${target.id}`;
       wasFollowing ? await client.delete(path) : await client.post(path);
       setDiscover((prev) =>
         prev.map((u) => (u.id === target.id ? { ...u, is_following: !wasFollowing } : u)),
@@ -188,22 +192,27 @@ export default function SocialFeed({ currentUserId }) {
                         {person.workout_count} workouts • {person.follower_count} followers
                       </div>
                     </div>
-                    <button
-                      onClick={() => toggleFollow(person)}
-                      disabled={!currentUserId || followBusy[person.id]}
-                      style={{
-                        padding: '8px 14px',
-                        borderRadius: '999px',
-                        border: '1px solid #10b981',
-                        background: person.is_following ? 'white' : '#ecfdf5',
-                        color: '#059669',
-                        fontWeight: 600,
-                        cursor: followBusy[person.id] ? 'wait' : 'pointer',
-                        opacity: !currentUserId || followBusy[person.id] ? 0.6 : 1,
-                      }}
-                    >
-                      {followBusy[person.id] ? '…' : person.is_following ? 'Following' : 'Follow'}
-                    </button>
+                    {Number(person.id) === viewerId ? (
+                      <span style={{ fontSize: '13px', color: '#666', fontWeight: 600, padding: '8px 14px' }}>You</span>
+                    ) : (
+                      <button
+                        onClick={() => toggleFollow(person)}
+                        disabled={!viewerId || followBusy[person.id]}
+                        title={!viewerId ? 'Sign in to follow lifters' : undefined}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '999px',
+                          border: '1px solid #10b981',
+                          background: person.is_following ? 'white' : '#ecfdf5',
+                          color: '#059669',
+                          fontWeight: 600,
+                          cursor: !viewerId ? 'not-allowed' : followBusy[person.id] ? 'wait' : 'pointer',
+                          opacity: !viewerId || followBusy[person.id] ? 0.6 : 1,
+                        }}
+                      >
+                        {followBusy[person.id] ? '…' : person.is_following ? 'Following' : 'Follow'}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

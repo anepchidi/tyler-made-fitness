@@ -425,3 +425,28 @@ class FoodItem(FoodItemBase):
     
     class Config:
         from_attributes = True
+
+# --- FATSECRET SCHEMAS ---
+class FatSecretServing(BaseModel):
+    calories: float = 0.0
+    protein: float = 0.0
+    carbohydrate: float = 0.0
+    fat: float = 0.0
+    fiber: float = 0.0
+    sugar: float = 0.0
+    sodium: float = 0.0
+    potassium: float = 0.0
+    iron: float = 0.0
+    calcium: float = 0.0
+    serving_description: str = "1 serving"
+
+class FatSecretFoodServings(BaseModel):
+    serving: FatSecretServing
+
+class FatSecretFoodDetail(BaseModel):
+    food_id: str
+    food_name: str
+    servings: FatSecretFoodServings
+
+class FatSecretFoodDetailResponse(BaseModel):
+    food: FatSecretFoodDetail
