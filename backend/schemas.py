@@ -360,6 +360,11 @@ class UserSettingsBase(BaseModel):
     fitness_goal: Optional[str] = Field(default=None, max_length=50)
 
 class UserSettingsCreate(UserSettingsBase):
+    height_cm: Optional[float] = Field(default=None, gt=0, le=300, strict=True, allow_inf_nan=False)
+    bodyweight_kg: Optional[float] = Field(default=None, gt=0, le=500, strict=True, allow_inf_nan=False)
+    age: Optional[int] = Field(default=None, gt=0, le=120, strict=True)
+    fitness_goal: Optional[str] = Field(default=None, min_length=1, max_length=50)
+
     class Config:
         extra = "forbid"
 

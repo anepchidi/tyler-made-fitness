@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import client from './api/client';
 import AuthPage from './components/AuthPage';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
 import WorkoutLogger from './components/WorkoutLogger';
 import History from './components/History';
 import ExerciseAnalytics from './components/ExerciseAnalytics';
@@ -39,7 +38,7 @@ export default function App() {
     const storedToken = localStorage.getItem('workoutToken');
     return localStorage.getItem('username') || (storedToken ? readTokenClaims(storedToken).username : '');
   });  
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('profile');
   const [exercises, setExercises] = useState([]);
   const [isLoadingExercises, setIsLoadingExercises] = useState(true);
   const [workoutHistory, setWorkoutHistory] = useState([]);
@@ -69,7 +68,7 @@ export default function App() {
     setUserId(null);
     setUsername('');
     setWorkoutHistory([]);
-    setActivePage('dashboard');
+    setActivePage('profile');
   }, []);
 
    const handleLogin = (access_token, user_id, uname) => {
@@ -86,7 +85,7 @@ export default function App() {
     setToken(access_token);
     setUserId(Number.isFinite(parsedId) && parsedId > 0 ? parsedId : null);
     setUsername(uname || '');
-    setActivePage('dashboard');
+    setActivePage('profile');
   };
 
   const fetchHistory = useCallback(async () => {
@@ -114,6 +113,11 @@ export default function App() {
     if (token && !userId) handleLogout();
   }, [token, userId, handleLogout]);
 
+   const handleStartWorkout = () => {
+    setSelectedTemplate(null);
+    setActivePage('workout');
+  };
+
   const handleLoadTemplate = (template) => {
     setSelectedTemplate(template);
     setActivePage('workout');
@@ -122,7 +126,6 @@ export default function App() {
   if (!token) return <AuthPage onLogin={handleLogin} />;
 
   const pages = {
-    dashboard: <Dashboard workoutHistory={workoutHistory} username={username} />,
     exercise: (
       <ExerciseAnalytics
         exercises={exercises}
@@ -135,7 +138,16 @@ export default function App() {
     templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,
     social: <SocialFeed currentUserId={userId} />,
-    profile: <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
+    profile: (
+      <Profile
+        username={username}
+        userId={userId}
+        workoutHistory={workoutHistory}
+        showSocialActions={true}
+        onLogWorkout={handleStartWorkout}
+        onSetupNutrition={() => setActivePage('nutrition')}
+      />
+    ),
   };
 
   return (
@@ -150,7 +162,7 @@ export default function App() {
       }}
     >
       <Sidebar activePage={activePage} setActivePage={setActivePage} username={username} onLogout={handleLogout} />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>{pages[activePage]}</div>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>{pages[activePage] ?? pages.profile}</div>
     </div>
   );
 }

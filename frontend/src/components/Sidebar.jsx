@@ -1,14 +1,13 @@
-import { LayoutDashboard, Dumbbell, History, User, KanbanSquare, Apple, LogOut, Users } from 'lucide-react';
+import { Dumbbell, History, User, KanbanSquare, Apple, LogOut, Users } from 'lucide-react';
 
 export default function Sidebar({ activePage, setActivePage, username, onLogout }) {
   const menuItems = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'profile', icon: User, label: 'Profile' },
     { id: 'templates', icon: KanbanSquare, label: 'Routines' },
     { id: 'exercise', icon: Dumbbell, label: 'Exercise' },
     { id: 'nutrition', icon: Apple, label: 'Nutrition' },
     { id: 'social', icon: Users, label: 'Social' },
     { id: 'history', icon: History, label: 'History' },
-    { id: 'profile', icon: User, label: 'Profile' },
   ];
 
   return (

@@ -116,6 +116,29 @@ export default function Nutrition({ userId }) {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
+  if (loading) {
+    return (
+      <div style={{ flex:1, padding:"32px", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{`@keyframes nutrition-spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ textAlign: "center" }}>
+          <div style={{
+            width: "48px",
+            height: "48px",
+            margin: "0 auto 16px",
+            borderRadius: "50%",
+            border: "4px solid #e5e7eb",
+            borderTopColor: "#059669",
+            animation: "nutrition-spin 0.8s linear infinite"
+          }} />
+          <p style={{ color: "#666", fontSize: "15px", fontWeight: 600, margin: 0 }}>
+            Loading your nutrition data...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+
   // Loading state: avoid rendering stale/incomplete content while the initial fetch is in flight
   if (loading) {
     return (
