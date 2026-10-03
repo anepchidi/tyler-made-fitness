@@ -1,13 +1,61 @@
-import { useState, useEffect } from 'react';
-import { Scale, Ruler, Calendar, Target, TrendingUp} from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import client from '../api/client';
+import {
+  calculateStreak,
+  calculateWeeklyVolume,
+  countWorkoutsInLastDays,
+  countWorkoutsThisMonth,
+  getRecentExercises,
+  isToday,
+} from '../utils/stats';
+import IdentityCard from './profile/IdentityCard';
+import RecentWorkoutsCard from './profile/RecentWorkoutsCard';
+import TodayCard from './profile/TodayCard';
+import VolumeChartCard from './profile/VolumeChartCard';
+import WorkoutsCard from './profile/WorkoutsCard';
+import EditProfileModal from './profile/EditProfileModal';
 
-export default function Profile({ username, userId, workoutHistory = [], showSocialActions = false, viewUserId = null }) {
-  const [unit, setUnit] = useState("kg");
-  const [bodyweight, setBodyweight] = useState("");
-  const [height, setHeight] = useState("");
-  const [age, setAge] = useState("");
-  const [goal, setGoal] = useState("muscle");
+const EMPTY_HISTORY = [];
+const DEFAULT_SETTINGS = { unit: 'kg', bodyweight: '', height: '', age: '', goal: 'muscle' };
+
+// Mirrors the bounds enforced by UserSettingsCreate on the backend so the
+// user gets a readable message instead of a generic 422.
+const NUMERIC_FIELDS = [
+  { key: 'bodyweight', label: 'Bodyweight', max: 500 },
+  { key: 'height', label: 'Height', max: 300 },
+  { key: 'age', label: 'Age', max: 120, integer: true },
+];
+
+function validateSettings(values) {
+  for (const { key, label, max, integer } of NUMERIC_FIELDS) {
+    const raw = values?.[key];
+    if (raw === '' || raw == null) continue;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return `${label} must be a positive number.`;
+    if (num > max) return `${label} must be at most ${max}.`;
+    if (integer && !Number.isInteger(num)) return `${label} must be a whole number.`;
+  }
+  return '';
+}
+
+// `workoutHistory` must belong to the profile being displayed.
+export default function Profile({
+  username,
+  userId,
+  workoutHistory = EMPTY_HISTORY,
+  showSocialActions = false,
+  viewUserId = null,
+  onLogWorkout,
+  onSetupNutrition,
+}) {
+  // Last values loaded from / saved to the server; drives the volume unit.
+  const [savedSettings, setSavedSettings] = useState(DEFAULT_SETTINGS);
+  // Unsaved edits inside the Edit profile modal.
+  const [draft, setDraft] = useState(DEFAULT_SETTINGS);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,14 +77,19 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
         try {
           const settingsData = await client.get('/users/me/settings');
           if (!cancelled) {
-            setUnit(settingsData.weight_unit || 'kg');
-            setHeight(settingsData.height_cm != null ? String(settingsData.height_cm) : '');
-            setBodyweight(settingsData.bodyweight_kg != null ? String(settingsData.bodyweight_kg) : '');
-            setAge(settingsData.age != null ? String(settingsData.age) : '');
-            setGoal(settingsData.fitness_goal || 'muscle');
+            const loaded = {
+              unit: settingsData?.weight_unit || 'kg',
+              height: settingsData?.height_cm != null ? String(settingsData.height_cm) : '',
+              bodyweight: settingsData?.bodyweight_kg != null ? String(settingsData.bodyweight_kg) : '',
+              age: settingsData?.age != null ? String(settingsData.age) : '',
+              goal: settingsData?.fitness_goal || 'muscle',
+            };
+            setSavedSettings(loaded);
+            setDraft(loaded);
+            setSettingsLoaded(true);
           }
         } catch (err) {
-          if (!cancelled) setError(err.message || 'Failed to load settings');
+          if (!cancelled) setLoadError(err?.message || 'Failed to load settings');
         }
       }
 
@@ -44,12 +97,12 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
         const profileData = await client.get(`/users/${targetUserId}/profile/public`);
         if (cancelled) return;
         setSocialCounts({
-          follower_count: profileData.follower_count || 0,
-          following_count: profileData.following_count || 0,
-          workout_count: profileData.workout_count || 0,
+          follower_count: profileData?.follower_count || 0,
+          following_count: profileData?.following_count || 0,
+          workout_count: profileData?.workout_count || 0,
         });
-        setIsFollowing(Boolean(profileData.is_following));
-      } catch (_) {
+        setIsFollowing(Boolean(profileData?.is_following));
+      } catch {
         /* public stats are non-critical */
       } finally {
         if (!cancelled) setLoading(false);
@@ -61,34 +114,54 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
   }, [userId, targetUserId, isOwnProfile]);
 
   const save = async () => {
+    const invalid = validateSettings(draft);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     try {
       setError("");
+      setSaving(true);
       await client.put('/users/me/settings', {
-        weight_unit: unit,
-        height_cm: height ? parseFloat(height) : null,
-        bodyweight_kg: bodyweight ? parseFloat(bodyweight) : null,
-        age: age ? parseInt(age) : null,
-        fitness_goal: goal,
+        weight_unit: draft.unit,
+        height_cm: draft.height ? parseFloat(draft.height) : null,
+        bodyweight_kg: draft.bodyweight ? parseFloat(draft.bodyweight) : null,
+        age: draft.age ? parseInt(draft.age) : null,
+        fitness_goal: draft.goal,
       });
+      setSavedSettings(draft);
+      setIsEditing(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setError(err.message || "Failed to save settings");
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Calculate stats from workout history
-  const totalWorkouts = socialCounts.workout_count || workoutHistory.length;
-  const thisMonth = workoutHistory.filter(w => {
-    const workoutDate = new Date(w.date);
-    const now = new Date();
-    return workoutDate.getMonth() === now.getMonth() && workoutDate.getFullYear() === now.getFullYear();
-  }).length;
+  const openEdit = () => {
+    setDraft(savedSettings);
+    setIsEditing(true);
+  };
 
-  // Calculate streak (simplified)
-  const today = new Date().toISOString().split('T')[0];
-  const hasWorkoutToday = workoutHistory.some(w => w.date === today);
-  const currentStreak = hasWorkoutToday ? 1 : 0; 
+  // Discard unsaved edits by re-syncing from the last loaded/saved values.
+  const cancelEdit = () => {
+    setDraft(savedSettings);
+    setError("");
+    setIsEditing(false);
+  };
+
+  const updateDraft = (field, value) => setDraft((prev) => ({ ...prev, [field]: value }));
+
+  const unit = savedSettings.unit;
+  const history = Array.isArray(workoutHistory) ? workoutHistory : EMPTY_HISTORY;
+  const streak = useMemo(() => calculateStreak(history), [history]);
+  const thisMonth = useMemo(() => countWorkoutsThisMonth(history), [history]);
+  const lastFourWeeks = useMemo(() => countWorkoutsInLastDays(history, 28), [history]);
+  const weeklyVolume = useMemo(() => calculateWeeklyVolume(history, 12), [history]);
+  const recentExercises = useMemo(() => getRecentExercises(history, 5), [history]);
+  const todaysWorkouts = useMemo(() => history.filter((w) => isToday(w?.date)), [history]);
 
   const handleSocialToggle = async () => {
     if (!userId || isOwnProfile) {
@@ -126,333 +199,67 @@ export default function Profile({ username, userId, workoutHistory = [], showSoc
     }
   };
 
-  const card = { 
-    background:"white", 
-    padding:"24px", 
-    borderRadius:"12px", 
-    boxShadow:"0 1px 3px rgba(0,0,0,0.06)", 
-    marginBottom:"16px",
-    border: "1px solid #e5e5e5"
-  };
-
-  const inp = { 
-    width:"100%", 
-    padding:"11px 14px", 
-    borderRadius:"10px", 
-    border:"1px solid #e5e5e5", 
-    fontSize:"14px", 
-    boxSizing:"border-box",
-    outline: "none",
-    transition: "border-color 0.2s",
-    background: "#fafafa"
-  };
-
   return (
-    <div style={{ flex:1, padding:"32px", overflowY:"auto", background: "#fafafa" }}>
-      <div style={{ maxWidth:"900px", margin:"0 auto" }}>
-        
-        {/* Header with Stats */}
-        <div style={card}>
-          <div style={{ display: "flex", alignItems: "center", gap: "20px", marginBottom: "24px" }}>
-            <div style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "20px",
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "36px",
-              color: "white",
-              fontWeight: 700
-            }}>
-              {username?.[0]?.toUpperCase() || "U"}
-            </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ margin: 0, fontSize: "24px", color: "#111", fontWeight: 700 }}>
-                {username || "User"}
-              </h2>
-              <p style={{ margin: "4px 0 0", fontSize: "14px", color: "#666" }}>
-                Member since {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-            {showSocialActions && !isOwnProfile ? (
-               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                 <button
-                  onClick={handleSocialToggle}
-                  disabled={socialBusy || loading}
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '999px',
-                    border: '1px solid #10b981',
-                    background: isFollowing ? '#ffffff' : '#ecfdf5',
-                    color: isFollowing ? '#065f46' : '#059669',
-                    cursor: socialBusy ? 'wait' : 'pointer',
-                    opacity: socialBusy || loading ? 0.6 : 1,
-                    fontWeight: 600,
-                  }}
-                >
-                  {socialBusy ? 'Working...' : (isFollowing ? 'Unfollow' : 'Follow')}
-                </button>
-                {socialMessage ? <span style={{ fontSize: '12px', color: '#666' }}>{socialMessage}</span> : null}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Quick Stats Grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
-            <div style={{ 
-              padding: "16px", 
-              background: "#f5f5f5", 
-              borderRadius: "12px",
-              textAlign: "center" 
-            }}>
-              <div style={{ fontSize: "28px", fontWeight: 700, color: "#111", marginBottom: "4px" }}>
-                {totalWorkouts}
-              </div>
-              <div style={{ fontSize: "12px", color: "#666", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Total Workouts
-              </div>
-            </div>
-
-            <div style={{ 
-              padding: "16px", 
-              background: "#ecfdf5", 
-              borderRadius: "12px",
-              textAlign: "center" 
-            }}>
-              <div style={{ fontSize: "28px", fontWeight: 700, color: "#10b981", marginBottom: "4px" }}>
-                {socialCounts.follower_count}
-              </div>
-              <div style={{ fontSize: "12px", color: "#059669", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Followers
-              </div>
-            </div>
-
-            <div style={{ 
-              padding: "16px", 
-              background: "#fef3c7", 
-              borderRadius: "12px",
-              textAlign: "center" 
-            }}>
-              <div style={{ fontSize: "28px", fontWeight: 700, color: "#f59e0b", marginBottom: "4px" }}>
-                {socialCounts.following_count}
-              </div>
-              <div style={{ fontSize: "12px", color: "#d97706", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Following
-              </div>
-            </div>
-
-            <div style={{ 
-              padding: "16px", 
-              background: "#dbeafe", 
-              borderRadius: "12px",
-              textAlign: "center" 
-            }}>
-              <div style={{ fontSize: "28px", fontWeight: 700, color: "#3b82f6", marginBottom: "4px" }}>
-                {thisMonth}
-              </div>
-              <div style={{ fontSize: "12px", color: "#2563eb", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                This Month
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Body Stats */}
-        <div style={card}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-            <TrendingUp size={20} color="#111" strokeWidth={2} />
-            <h3 style={{ margin: 0, fontSize: "17px", color: "#111", fontWeight: 700 }}>
-              Body Stats
-            </h3>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-            <div>
-              <label style={{ 
-                fontSize: "13px", 
-                fontWeight: 600, 
-                color: "#666",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                marginBottom: "8px"
-              }}>
-                <Scale size={16} />
-                Bodyweight ({unit})
-              </label>
-              <input 
-                style={inp} 
-                type="number" 
-                placeholder={unit === "kg" ? "e.g. 75" : "e.g. 165"} 
-                value={bodyweight}
-                onChange={e => setBodyweight(e.target.value)} 
-                onFocus={e => e.target.style.borderColor = "#10b981"}
-                onBlur={e => e.target.style.borderColor = "#e5e5e5"}
-              />
-            </div>
-
-            <div>
-              <label style={{ 
-                fontSize: "13px", 
-                fontWeight: 600, 
-                color: "#666",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                marginBottom: "8px"
-              }}>
-                <Ruler size={16} />
-                Height (cm)
-              </label>
-              <input 
-                style={inp} 
-                type="number" 
-                placeholder="e.g. 175" 
-                value={height}
-                onChange={e => setHeight(e.target.value)}
-                onFocus={e => e.target.style.borderColor = "#10b981"}
-                onBlur={e => e.target.style.borderColor = "#e5e5e5"}
-              />
-            </div>
-
-            <div>
-              <label style={{ 
-                fontSize: "13px", 
-                fontWeight: 600, 
-                color: "#666",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                marginBottom: "8px"
-              }}>
-                <Calendar size={16} />
-                Age
-              </label>
-              <input 
-                style={inp} 
-                type="number" 
-                placeholder="e.g. 25" 
-                value={age}
-                onChange={e => setAge(e.target.value)}
-                onFocus={e => e.target.style.borderColor = "#10b981"}
-                onBlur={e => e.target.style.borderColor = "#e5e5e5"}
-              />
-            </div>
-
-            <div>
-              <label style={{ 
-                fontSize: "13px", 
-                fontWeight: 600, 
-                color: "#666",
-                marginBottom: "8px",
-                display: "block"
-              }}>
-                Weight Unit
-              </label>
-              <div style={{ display: "flex", gap: "8px" }}>
-                {["kg", "lbs"].map(u => (
-                  <button 
-                    key={u} 
-                    onClick={() => setUnit(u)} 
-                    style={{
-                      flex: 1,
-                      padding: "11px",
-                      borderRadius: "10px",
-                      border: "2px solid",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      fontSize: "14px",
-                      borderColor: unit === u ? "#10b981" : "#e5e5e5",
-                      background: unit === u ? "#ecfdf5" : "#fafafa",
-                      color: unit === u ? "#10b981" : "#666",
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ 
-              fontSize: "13px", 
-              fontWeight: 600, 
-              color: "#666",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              marginBottom: "8px"
-            }}>
-              <Target size={16} />
-              Fitness Goal
-            </label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-              {[
-                { id: "muscle", label: "Build Muscle", icon: <TrendingUp size={20} /> },
-                { id: "lose", label: "Lose Weight", icon: <Scale size={20} /> },
-                { id: "maintain", label: "Maintain", icon: <Target size={20} /> }
-              ].map(g => (
-                <button 
-                  key={g.id} 
-                  onClick={() => setGoal(g.id)} 
-                  style={{
-                    padding: "12px 10px",
-                    borderRadius: "10px",
-                    border: "2px solid",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                    borderColor: goal === g.id ? "#10b981" : "#e5e5e5",
-                    background: goal === g.id ? "#ecfdf5" : "#fafafa",
-                    color: goal === g.id ? "#10b981" : "#666",
-                    transition: "all 0.2s",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "6px"
-                  }}
-                >
-                  {g.icon}
-                  <span>{g.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {error ? (
-          <div style={{ marginBottom: '12px', color: '#b91c1c', fontSize: '14px' }}>{error}</div>
-        ) : null}
-
-        {/* Save Button */}
-        <button 
-          onClick={save} 
+    <div style={{ flex: 1, padding: "32px", overflowY: "auto", background: "#fafafa" }}>
+      <div style={{ maxWidth: "1100px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* Top row: two columns while the profile area is wider than ~760px, otherwise stacked
+            in DOM order (identity, today). */}
+        <div
           style={{
-            width: "100%",
-            padding: "14px",
-            background: saved ? "#10b981" : "#10b981",
-            color: "white",
-            border: "none",
-            borderRadius: "12px",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: "15px",
-            transition: "all 0.2s",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "10px"
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
+            gap: "16px",
+            alignItems: "start",
           }}
-          onMouseEnter={e => !saved && (e.currentTarget.style.background = "#059669")}
-          onMouseLeave={e => !saved && (e.currentTarget.style.background = "#10b981")}
         >
-          {saved ? "✓ Settings Saved!" : "Save Settings"}
-        </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
+            <IdentityCard
+              username={username}
+              isOwnProfile={isOwnProfile}
+              showSocialActions={showSocialActions}
+              socialCounts={socialCounts}
+              streak={streak}
+              isFollowing={isFollowing}
+              socialBusy={socialBusy}
+              socialMessage={socialMessage}
+              loading={loading}
+              savedNotice={saved}
+              onToggleFollow={handleSocialToggle}
+              onEditProfile={openEdit}
+            />
+            <RecentWorkoutsCard count={lastFourWeeks} />
+          </div>
+
+          {/* Calories and macros are private, so visitors never see this card. */}
+          {isOwnProfile ? (
+            <TodayCard
+              todaysWorkouts={todaysWorkouts}
+              recentExercises={recentExercises}
+              unit={unit}
+              onLogWorkout={onLogWorkout}
+              onSetupNutrition={onSetupNutrition}
+            />
+          ) : null}
+        </div>
+
+        {/* Stats band */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+          <VolumeChartCard weeklyVolume={weeklyVolume} unit={unit} style={{ flex: "2 1 420px" }} />
+          <WorkoutsCard thisMonth={thisMonth} style={{ flex: "1 1 220px" }} />
+        </div>
       </div>
+
+      {isOwnProfile && isEditing ? (
+        <EditProfileModal
+          values={draft}
+          onChange={updateDraft}
+          onSave={save}
+          onCancel={cancelEdit}
+          saving={saving}
+          canSave={settingsLoaded}
+          error={error || loadError || (settingsLoaded ? "" : "Loading your settings…")}
+        />
+      ) : null}
     </div>
   );
 }

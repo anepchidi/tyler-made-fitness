@@ -29,6 +29,7 @@ export default function WorkoutLogger({ userId, template, onWorkoutSaved }) {
   const [isActive, setIsActive] = useState(() => localStorage.getItem('isWorkoutActive') === 'true');
   const [seconds, setSeconds] = useState(() => parseInt(localStorage.getItem('activeSeconds'), 10) || 0);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [templateLoading, setTemplateLoading] = useState(false);
   const [visibility, setVisibility] = useState(
     () => localStorage.getItem('activeVisibility') || 'private',

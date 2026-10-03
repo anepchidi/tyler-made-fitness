@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import client from './api/client';
 import AuthPage from './components/AuthPage';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
 import WorkoutLogger from './components/WorkoutLogger';
 import History from './components/History';
 import ExerciseAnalytics from './components/ExerciseAnalytics';
@@ -18,7 +17,7 @@ export default function App() {
     return id ? parseInt(id, 10) : null;
   });
   const [username, setUsername] = useState(localStorage.getItem('username') || '');
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('profile');
   const [exercises, setExercises] = useState([]);
   const [isLoadingExercises, setIsLoadingExercises] = useState(true);
   const [workoutHistory, setWorkoutHistory] = useState([]);
@@ -69,7 +68,7 @@ export default function App() {
     setToken(access_token);
     setUserId(parseInt(user_id, 10));
     setUsername(uname || '');
-    setActivePage('dashboard');
+    setActivePage('profile');
   };
 
   const handleLogout = () => {
@@ -78,7 +77,7 @@ export default function App() {
     setUserId(null);
     setUsername('');
     setWorkoutHistory([]);
-    setActivePage('dashboard');
+    setActivePage('profile');
   };
 
   useEffect(() => {
@@ -86,6 +85,11 @@ export default function App() {
     window.addEventListener('auth:unauthorized', onUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
   }, []);
+
+  const handleStartWorkout = () => {
+    setSelectedTemplate(null);
+    setActivePage('workout');
+  };
 
   const handleLoadTemplate = (template) => {
     setSelectedTemplate(template);
@@ -95,7 +99,6 @@ export default function App() {
   if (!token) return <AuthPage onLogin={handleLogin} />;
 
   const pages = {
-    dashboard: <Dashboard workoutHistory={workoutHistory} username={username} />,
     exercise: (
       <ExerciseAnalytics
         exercises={exercises}
@@ -108,7 +111,16 @@ export default function App() {
     templates: <Templates exercises={exercises} onLoadTemplate={handleLoadTemplate} />,
     nutrition: <Nutrition userId={userId} />,
     social: <SocialFeed />,
-    profile: <Profile username={username} userId={userId} workoutHistory={workoutHistory} showSocialActions={true} />,
+    profile: (
+      <Profile
+        username={username}
+        userId={userId}
+        workoutHistory={workoutHistory}
+        showSocialActions={true}
+        onLogWorkout={handleStartWorkout}
+        onSetupNutrition={() => setActivePage('nutrition')}
+      />
+    ),
   };
 
   return (
@@ -123,7 +135,7 @@ export default function App() {
       }}
     >
       <Sidebar activePage={activePage} setActivePage={setActivePage} username={username} onLogout={handleLogout} />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>{pages[activePage]}</div>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>{pages[activePage] ?? pages.profile}</div>
     </div>
   );
 }
