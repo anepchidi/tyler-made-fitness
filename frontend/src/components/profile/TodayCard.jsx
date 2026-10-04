@@ -196,9 +196,12 @@ export default function TodayCard({
   nutrition = null,
   onLogWorkout,
   onSetupNutrition,
+  embedded = false,
+  style,
 }) {
+  // `embedded` drops the card chrome so the panel can sit inside a shared card.
   return (
-    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ ...(embedded ? { minWidth: 0 } : card), display: 'flex', flexDirection: 'column', gap: '20px', ...style }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div style={iconTile}>
           <Clock size={18} color="#059669" />

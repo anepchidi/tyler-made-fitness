@@ -14,8 +14,16 @@ import TodayCard from './profile/TodayCard';
 import VolumeChartCard from './profile/VolumeChartCard';
 import WorkoutsCard from './profile/WorkoutsCard';
 import EditProfileModal from './profile/EditProfileModal';
+import { card } from './profile/styles';
 
 const EMPTY_HISTORY = [];
+const panel = {
+  padding: "28px 24px",
+  boxSizing: "border-box",
+  borderTop: "1px solid #eee",
+  borderLeft: "1px solid #eee",
+  margin: "-1px 0 0 -1px",
+};
 const DEFAULT_SETTINGS = { unit: 'kg', bodyweight: '', height: '', age: '', goal: 'muscle' };
 
 // Mirrors the bounds enforced by UserSettingsCreate on the backend so the
@@ -202,37 +210,32 @@ export default function Profile({
   return (
     <div style={{ flex: 1, padding: "32px", overflowY: "auto", background: "#fafafa" }}>
       <div style={{ maxWidth: "1100px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "16px" }}>
-        {/* Top row: two columns while the profile area is wider than ~760px, otherwise stacked
-            in DOM order (identity, today). */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
-            gap: "16px",
-            alignItems: "start",
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
-            <IdentityCard
-              username={username}
-              isOwnProfile={isOwnProfile}
-              showSocialActions={showSocialActions}
-              socialCounts={socialCounts}
-              streak={streak}
-              isFollowing={isFollowing}
-              socialBusy={socialBusy}
-              socialMessage={socialMessage}
-              loading={loading}
-              savedNotice={saved}
-              onToggleFollow={handleSocialToggle}
-              onEditProfile={openEdit}
-            />
-            <RecentWorkoutsCard count={lastFourWeeks} />
-          </div>
+        {/* Identity + today share one card. Each panel draws its divider on its top/left edge
+            and is pulled 1px out, so the card's overflow clips whichever divider sits on the
+            outer edge: vertical rule side by side, horizontal rule once stacked. */}
+        <div style={{ ...card, padding: 0, overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
+          <IdentityCard
+            embedded
+            style={{ ...panel, flex: "1 1 260px" }}
+            username={username}
+            isOwnProfile={isOwnProfile}
+            showSocialActions={showSocialActions}
+            socialCounts={socialCounts}
+            streak={streak}
+            isFollowing={isFollowing}
+            socialBusy={socialBusy}
+            socialMessage={socialMessage}
+            loading={loading}
+            savedNotice={saved}
+            onToggleFollow={handleSocialToggle}
+            onEditProfile={openEdit}
+          />
 
-          {/* Calories and macros are private, so visitors never see this card. */}
+          {/* Calories and macros are private, so visitors never see this panel. */}
           {isOwnProfile ? (
             <TodayCard
+              embedded
+              style={{ ...panel, flex: "2 1 360px" }}
               todaysWorkouts={todaysWorkouts}
               recentExercises={recentExercises}
               unit={unit}
@@ -245,7 +248,10 @@ export default function Profile({
         {/* Stats band */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
           <VolumeChartCard weeklyVolume={weeklyVolume} unit={unit} style={{ flex: "2 1 420px" }} />
-          <WorkoutsCard thisMonth={thisMonth} style={{ flex: "1 1 220px" }} />
+          <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
+            <WorkoutsCard thisMonth={thisMonth} style={{ flex: 1 }} />
+            <RecentWorkoutsCard count={lastFourWeeks} />
+          </div>
         </div>
       </div>
 
